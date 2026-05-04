@@ -1,0 +1,189 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f5f5f5;
+}
+
+/* БАННЕР */
+.banner {
+  background: url("https://via.placeholder.com/800x400") center/cover no-repeat;
+  height: 220px;
+  color: white;
+  display: flex;
+  align-items: flex-end;
+  padding: 16px;
+}
+
+/* КАТЕГОРИИ */
+.categories,
+.subcategories {
+  display: flex;
+  overflow-x: auto;
+  padding: 10px;
+  background: white;
+}
+
+button {
+  margin-right: 8px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 20px;
+  background: #eee;
+  cursor: pointer;
+}
+
+button.active {
+  background: black;
+  color: white;
+}
+
+/* ТОВАРЫ */
+.products {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 10px;
+}
+
+.product {
+  background: white;
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.product img {
+  width: 100%;
+  border-radius: 8px;
+}
+
+.product-image {
+  position: relative;
+}
+
+.play-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 26px;
+  background: rgba(0, 0, 0, 0.5);
+  color: white;
+  padding: 8px;
+  border-radius: 50%;
+}
+
+.colors {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.color {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  margin: 3px;
+  border: 1px solid #ccc;
+}
+
+/* МОДАЛКА */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-content {
+  background: white;
+  width: 90%;
+  max-height: 90%;
+  overflow: auto;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.modal-color {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  margin: 5px;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+.modal-color.selected {
+  border: 2px solid black;
+}
+
+.sizes button {
+  margin: 4px;
+  padding: 6px 10px;
+  border: 1px solid #ccc;
+  background: white;
+}
+
+.sizes button.selected {
+  background: black;
+  color: white;
+}
+
+.add-btn {
+  width: 100%;
+  padding: 10px;
+  background: black;
+  color: white;
+  border-radius: 8px;
+  margin-top: 10px;
+}
+
+.cart {
+  margin: 10px;
+  background: white;
+  padding: 12px;
+  border-radius: 12px;
+}
+
+textarea {
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.telegram {
+  background: #0088cc;
+  color: white;
+}
+
+.max {
+  background: black;
+  color: white;
+}
+
+.video-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.video-box {
+  width: 90%;
+}
+
+.close {
+  position: absolute;
+  top: 10px;
+  right: 15px;
+  color: white;
+  font-size: 24px;
+  cursor: pointer;
+}
