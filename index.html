@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fashion Store</title>
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <div class="banner">
+      <div>
+        <h2>Fashion Store</h2>
+        <p>Новая коллекция уже в продаже</p>
+      </div>
+    </div>
+
+    <div class="categories" id="categories"></div>
+    <div class="products" id="products"></div>
+
+    <div class="modal" id="modal" role="dialog" aria-modal="true">
+      <div class="modal-content" id="modalContent"></div>
+    </div>
+
+    <div class="video-modal" id="videoModal">
+      <div class="close" aria-label="Закрыть видео">✕</div>
+      <div class="video-box" id="videoBox"></div>
+    </div>
+
+    <div class="cart">
+      <h3>Корзина</h3>
+      <div id="cartItems"></div>
+      <b>Итого: <span id="total">0</span> ₽</b>
+
+      <select id="action">
+        <option value="order">Оформить заказ</option>
+        <option value="question">Задать вопрос</option>
+      </select>
+
+      <textarea id="comment" placeholder="Комментарий" rows="3"></textarea>
+
+      <button type="button" class="telegram" id="sendTelegram">Telegram</button>
+      <button type="button" class="max" id="copyOrder">MAX</button>
+    </div>
+
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>

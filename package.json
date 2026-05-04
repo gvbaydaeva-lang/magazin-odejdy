@@ -1,0 +1,10 @@
+{
+  "name": "fashion-store",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Прототип витрины магазина одежды: каталог, корзина, видео, отправка заказа",
+  "scripts": {
+    "start": "npx --yes serve . -l 3000",
+    "preview": "npx --yes serve . -l 3000"
+  }
+}
