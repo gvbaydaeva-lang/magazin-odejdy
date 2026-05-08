@@ -1,6 +1,31 @@
 // Первый этап админки: только каркас UI и переключение экранов без backend.
 (function () {
   const app = document.getElementById("app");
+  const STORAGE_KEYS = {
+    categories: "fashionStoreAdminCategories",
+  };
+  const DEFAULT_CATEGORIES = [
+    "Платья",
+    "Юбки",
+    "Джинсы",
+    "Брюки",
+    "Костюмы",
+    "Спортивные костюмы",
+    "Футболки",
+    "Топы",
+    "Рубашки",
+    "Блузки",
+    "Пиджаки",
+    "Жакеты",
+    "Шорты",
+    "Верхняя одежда",
+    "Кардиганы",
+    "Свитеры",
+    "Худи",
+    "Толстовки",
+    "Аксессуары",
+    "Обувь",
+  ];
 
   // Простое состояние приложения.
   const state = {
@@ -13,6 +38,9 @@
       phone: "+7",
     },
   };
+
+  // Инициализируем категории только если пользовательские данные еще не созданы.
+  initCategoriesStorage();
 
   const sections = [
     { id: "dashboard", title: "Панель" },
@@ -272,9 +300,21 @@
       `;
     }
 
+    if (sectionId === "categories") {
+      const categories = getCategoriesFromStorage();
+      return `
+        <article class="stub-card">
+          <h3 class="stub-title">Категории</h3>
+          <p class="stub-text">Стартовый универсальный список категорий (${categories.length})</p>
+          <ul class="stub-text">
+            ${categories.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+          </ul>
+        </article>
+      `;
+    }
+
     const sectionMap = {
       products: "Раздел товаров будет добавлен на следующем этапе",
-      categories: "Раздел категорий будет добавлен на следующем этапе",
       subcategories: "Раздел подкатегорий будет добавлен на следующем этапе",
       orders: "Раздел заказов будет добавлен на следующем этапе",
       stories: "Раздел stories будет добавлен на следующем этапе",
@@ -331,6 +371,27 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#39;");
+  }
+
+  function initCategoriesStorage() {
+    const raw = localStorage.getItem(STORAGE_KEYS.categories);
+    if (raw !== null) {
+      return;
+    }
+    localStorage.setItem(STORAGE_KEYS.categories, JSON.stringify(DEFAULT_CATEGORIES));
+  }
+
+  function getCategoriesFromStorage() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.categories);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+      return DEFAULT_CATEGORIES;
+    } catch {
+      return DEFAULT_CATEGORIES;
+    }
   }
 
   render();

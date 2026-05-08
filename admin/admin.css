@@ -261,6 +261,15 @@ input {
   line-height: 1.45;
 }
 
+.stub-card ul {
+  margin: 10px 0 0;
+  padding-left: 18px;
+}
+
+.stub-card li {
+  margin: 4px 0;
+}
+
 /* Адаптация */
 @media (max-width: 980px) {
   .panel-grid {
