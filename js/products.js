@@ -7,6 +7,7 @@ export const products = [
     desc: "Премиальное платье в пудрово-розовом оттенке",
     colors: ["pink", "beige", "brown", "black"],
     image: "111cd184dc07be3d13154e209eb09c00.jpg",
+    images: ["111cd184dc07be3d13154e209eb09c00.jpg"],
     video: "bc71b0b3c6396541a06aa01851812689.mp4",
   },
   {

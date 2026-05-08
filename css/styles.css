@@ -7,12 +7,13 @@ body {
 
 /* БАННЕР */
 .banner {
-  background: url("../ChatGPT Image 8 мая 2026 г., 17_45_04.png") center/cover no-repeat;
-  height: 280px;
+  background: #efe3d5 url("../ChatGPT Image 8 мая 2026 г., 17_45_04.png") center/contain no-repeat;
+  min-height: 220px;
+  aspect-ratio: 16 / 7;
   color: #2f2015;
   display: flex;
   align-items: flex-end;
-  padding: 20px;
+  padding: 18px;
   border-radius: 0 0 24px 24px;
   box-shadow: 0 12px 30px rgba(72, 45, 29, 0.18);
   margin-bottom: 8px;
@@ -175,15 +176,15 @@ textarea {
 }
 
 .telegram {
-  background: #8a6244;
-  color: #f8efe5;
-  border-color: #8a6244;
+  background: #229ed9;
+  color: #ffffff;
+  border-color: #229ed9;
 }
 
 .max {
-  background: #6c4831;
-  color: #f8efe5;
-  border-color: #6c4831;
+  background: #1d3f7a;
+  color: #eef4ff;
+  border-color: #1d3f7a;
 }
 
 .video-modal {
@@ -216,4 +217,53 @@ select {
   border: 1px solid #cbb39a;
   background: #f7ede3;
   color: #3b2718;
+}
+
+.modal-media {
+  margin-top: 12px;
+  margin-bottom: 14px;
+}
+
+.modal-main-image {
+  width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+  border-radius: 12px;
+  background: #f4e9dc;
+  border: 1px solid #e5d2bd;
+}
+
+.media-btn {
+  margin-top: 8px;
+  background: #6c4831;
+  color: #f8efe5;
+  border-color: #6c4831;
+}
+
+.modal-gallery {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+}
+
+.modal-thumb {
+  width: 68px;
+  height: 68px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 2px solid #d8c0a8;
+  cursor: pointer;
+}
+
+.modal-thumb.selected {
+  border-color: #6c4831;
+}
+
+@media (max-width: 640px) {
+  .banner {
+    min-height: 180px;
+    aspect-ratio: 16 / 9;
+    padding: 12px;
+  }
 }

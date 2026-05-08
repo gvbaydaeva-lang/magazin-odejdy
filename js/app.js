@@ -3,6 +3,7 @@ import { TELEGRAM_USERNAME } from "./config.js";
 
 let selectedCat = "Все";
 const cart = [];
+let productAfterVideo = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -52,7 +53,11 @@ function renderProducts() {
       }
       imgWrap.addEventListener("click", (e) => {
         e.stopPropagation();
-        openVideoModal(p.video);
+        if (p.video) {
+          openVideoModal(p.video, p);
+          return;
+        }
+        openProductModal(p);
       });
 
       const title = document.createElement("h4");
@@ -84,8 +89,9 @@ function renderProducts() {
     });
 }
 
-function openVideoModal(video) {
+function openVideoModal(video, product = null) {
   if (!video) return;
+  productAfterVideo = product;
   const box = $("videoBox");
   box.innerHTML = "";
   const v = document.createElement("video");
@@ -106,6 +112,11 @@ function openVideoModal(video) {
 function closeVideoModal() {
   $("videoModal").style.display = "none";
   $("videoBox").innerHTML = "";
+  if (productAfterVideo) {
+    const product = productAfterVideo;
+    productAfterVideo = null;
+    openProductModal(product);
+  }
 }
 
 function renderCart() {
@@ -161,12 +172,25 @@ function openProductModal(p) {
   const content = $("modalContent");
   let size = null;
   let color = null;
+  const gallery = Array.isArray(p.images) && p.images.length ? p.images : [p.image];
+  let activeImage = gallery[0];
 
   function renderModal() {
     content.innerHTML = `
       <h3>${escapeHtml(p.name)}</h3>
       <p>${escapeHtml(p.desc)}</p>
       <b>${p.price} ₽</b>
+      <div class="modal-media">
+        <img class="modal-main-image" src="${escapeHtml(activeImage)}" alt="${escapeHtml(
+      p.name
+    )}">
+        ${
+          p.video
+            ? '<button type="button" class="media-btn" data-action="watch-video">Смотреть видео</button>'
+            : ""
+        }
+        <div class="modal-gallery" id="modalGallery"></div>
+      </div>
       <div>
         <b>Цвет:</b>
         <div class="colors" id="modalColors"></div>
@@ -199,6 +223,16 @@ function openProductModal(p) {
       btn.textContent = s;
       sizesEl.appendChild(btn);
     });
+
+    const galleryEl = content.querySelector("#modalGallery");
+    gallery.forEach((imgSrc) => {
+      const thumb = document.createElement("img");
+      thumb.src = imgSrc;
+      thumb.alt = `${p.name} preview`;
+      thumb.className = "modal-thumb" + (imgSrc === activeImage ? " selected" : "");
+      thumb.dataset.modalImage = imgSrc;
+      galleryEl.appendChild(thumb);
+    });
   }
 
   content.onclick = (e) => {
@@ -211,6 +245,16 @@ function openProductModal(p) {
     if (target.dataset.modalSize !== undefined) {
       size = target.dataset.modalSize;
       renderModal();
+      return;
+    }
+    if (target.dataset.modalImage !== undefined) {
+      activeImage = target.dataset.modalImage;
+      renderModal();
+      return;
+    }
+    if (target.dataset.action === "watch-video" && p.video) {
+      modal.style.display = "none";
+      openVideoModal(p.video, p);
       return;
     }
     if (target.dataset.action === "close") {
