@@ -270,6 +270,60 @@ input {
   margin: 4px 0;
 }
 
+.inline-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.categories-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.category-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 8px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.category-card.selected {
+  border-color: #f3b9a4;
+  box-shadow: 0 0 0 2px #ffe4d9;
+}
+
+.category-select {
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  padding: 8px;
+}
+
+.category-delete {
+  background: #fff;
+  border: 1px solid #f2c6b9;
+  color: #9a5747;
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.selected-box {
+  margin-top: 12px;
+  border: 1px solid #f3d5c8;
+  border-radius: 12px;
+  background: #fff8f4;
+  padding: 12px;
+}
+
 /* Адаптация */
 @media (max-width: 980px) {
   .panel-grid {
@@ -302,6 +356,10 @@ input {
   }
 
   .panel-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .inline-form {
     grid-template-columns: 1fr;
   }
 }
