@@ -1,17 +1,21 @@
 body {
   margin: 0;
-  font-family: Arial, sans-serif;
-  background: #f5f5f5;
+  font-family: "Inter", "Segoe UI", Arial, sans-serif;
+  background: linear-gradient(180deg, #f3ece3 0%, #e9ddcf 100%);
+  color: #2f2015;
 }
 
 /* БАННЕР */
 .banner {
-  background: url("https://via.placeholder.com/800x400") center/cover no-repeat;
-  height: 220px;
-  color: white;
+  background: url("../ChatGPT Image 8 мая 2026 г., 17_45_04.png") center/cover no-repeat;
+  height: 280px;
+  color: #2f2015;
   display: flex;
   align-items: flex-end;
-  padding: 16px;
+  padding: 20px;
+  border-radius: 0 0 24px 24px;
+  box-shadow: 0 12px 30px rgba(72, 45, 29, 0.18);
+  margin-bottom: 8px;
 }
 
 /* КАТЕГОРИИ */
@@ -20,21 +24,29 @@ body {
   display: flex;
   overflow-x: auto;
   padding: 10px;
-  background: white;
+  background: rgba(255, 250, 244, 0.85);
+  backdrop-filter: blur(4px);
 }
 
 button {
   margin-right: 8px;
   padding: 8px 12px;
-  border: none;
+  border: 1px solid #cbb39a;
   border-radius: 20px;
-  background: #eee;
+  background: #e8d9c8;
+  color: #3b2718;
   cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+button:hover {
+  background: #dcc7b2;
 }
 
 button.active {
-  background: black;
-  color: white;
+  background: #6c4831;
+  color: #f8efe5;
+  border-color: #6c4831;
 }
 
 /* ТОВАРЫ */
@@ -46,9 +58,11 @@ button.active {
 }
 
 .product {
-  background: white;
-  border-radius: 12px;
+  background: #fffaf4;
+  border: 1px solid #eadbc9;
+  border-radius: 16px;
   padding: 10px;
+  box-shadow: 0 8px 20px rgba(104, 72, 46, 0.08);
 }
 
 .product img {
@@ -66,8 +80,8 @@ button.active {
   left: 50%;
   transform: translate(-50%, -50%);
   font-size: 26px;
-  background: rgba(0, 0, 0, 0.5);
-  color: white;
+  background: rgba(72, 45, 29, 0.65);
+  color: #fff6ed;
   padding: 8px;
   border-radius: 50%;
 }
@@ -83,7 +97,7 @@ button.active {
   height: 16px;
   border-radius: 50%;
   margin: 3px;
-  border: 1px solid #ccc;
+  border: 1px solid #d4bfa8;
 }
 
 /* МОДАЛКА */
@@ -100,12 +114,13 @@ button.active {
 }
 
 .modal-content {
-  background: white;
+  background: #fffaf4;
   width: 90%;
   max-height: 90%;
   overflow: auto;
-  border-radius: 12px;
+  border-radius: 16px;
   padding: 12px;
+  border: 1px solid #eadbc9;
 }
 
 .modal-color {
@@ -118,35 +133,38 @@ button.active {
 }
 
 .modal-color.selected {
-  border: 2px solid black;
+  border: 2px solid #6c4831;
 }
 
 .sizes button {
   margin: 4px;
   padding: 6px 10px;
-  border: 1px solid #ccc;
-  background: white;
+  border: 1px solid #cbb39a;
+  background: #f7ede3;
 }
 
 .sizes button.selected {
-  background: black;
-  color: white;
+  background: #6c4831;
+  color: #f8efe5;
 }
 
 .add-btn {
   width: 100%;
   padding: 10px;
-  background: black;
-  color: white;
+  background: #6c4831;
+  color: #f8efe5;
   border-radius: 8px;
   margin-top: 10px;
+  border-color: #6c4831;
 }
 
 .cart {
   margin: 10px;
-  background: white;
+  background: #fffaf4;
   padding: 12px;
-  border-radius: 12px;
+  border-radius: 16px;
+  border: 1px solid #eadbc9;
+  box-shadow: 0 8px 20px rgba(104, 72, 46, 0.08);
 }
 
 textarea {
@@ -157,13 +175,15 @@ textarea {
 }
 
 .telegram {
-  background: #0088cc;
-  color: white;
+  background: #8a6244;
+  color: #f8efe5;
+  border-color: #8a6244;
 }
 
 .max {
-  background: black;
-  color: white;
+  background: #6c4831;
+  color: #f8efe5;
+  border-color: #6c4831;
 }
 
 .video-modal {
@@ -186,4 +206,14 @@ textarea {
   color: white;
   font-size: 24px;
   cursor: pointer;
+}
+
+select {
+  width: 100%;
+  margin-top: 10px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid #cbb39a;
+  background: #f7ede3;
+  color: #3b2718;
 }
