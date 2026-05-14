@@ -1,8 +1,14 @@
-import { products, categories } from "./products.js";
+import { products as defaultProducts } from "./products.js";
 import { TELEGRAM_USERNAME } from "./config.js";
+import {
+  ensureCatalogStorageReady,
+  loadCatalogProducts,
+  CATALOG_STORAGE_KEY,
+} from "./catalog.js";
 
 let selectedCat = "Все";
 const cart = [];
+let catalogProducts = [];
 let productAfterVideo = null;
 
 const $ = (id) => document.getElementById(id);
@@ -13,10 +19,19 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+function categoryFiltersFromCatalog() {
+  const set = new Set();
+  catalogProducts.forEach((p) => {
+    if (p.cat) set.add(p.cat);
+  });
+  return ["Все", ...Array.from(set).sort((a, b) => a.localeCompare(b, "ru"))];
+}
+
 function renderCategories() {
   const container = $("categories");
   container.innerHTML = "";
-  categories.forEach((c) => {
+  const chips = categoryFiltersFromCatalog();
+  chips.forEach((c) => {
     const b = document.createElement("button");
     b.textContent = c;
     if (c === selectedCat) b.classList.add("active");
@@ -33,7 +48,7 @@ function renderProducts() {
   const container = $("products");
   container.innerHTML = "";
 
-  products
+  catalogProducts
     .filter((p) => selectedCat === "Все" || p.cat === selectedCat)
     .forEach((p) => {
       const div = document.createElement("div");
@@ -278,10 +293,26 @@ function openProductModal(p) {
   modal.style.display = "flex";
 }
 
-function init() {
+function reloadCatalogFromStorage() {
+  ensureCatalogStorageReady(defaultProducts);
+  catalogProducts = loadCatalogProducts(defaultProducts);
+  if (!categoryFiltersFromCatalog().includes(selectedCat)) {
+    selectedCat = "Все";
+  }
   renderCategories();
   renderProducts();
+}
+
+function init() {
+  reloadCatalogFromStorage();
   renderCart();
+
+  window.addEventListener("storage", (e) => {
+    if (e.key === CATALOG_STORAGE_KEY) {
+      reloadCatalogFromStorage();
+      renderCart();
+    }
+  });
 
   $("videoModal")
     .querySelector(".close")

@@ -1,18 +1,26 @@
-// Этап админки без backend: все данные живут в localStorage.
-(function () {
-  const app = document.getElementById("app");
-  const STORAGE_KEYS = {
-    auth: "adminAuth",
-    owner: "adminOwner",
-    categories: "fashionStoreAdminCategories",
-    subcategories: "fashionStoreAdminSubcategories",
-    selectedCategory: "fashionStoreAdminSelectedCategory",
-    currentSection: "fashionStoreAdminCurrentSection",
-    settings: "fashionStoreAdminSettings",
-    users: "fashionStoreAdminUsers",
-    products: "fashionStoreAdminProducts",
-    stories: "fashionStoreAdminStories",
-  };
+// Этап админки без backend: данные в localStorage; каталог товаров общий с витриной — js/catalog.js
+import {
+  CATALOG_STORAGE_KEY,
+  ensureCatalogStorageReady,
+  loadCatalogProducts,
+  saveCatalogProducts,
+  normalizeProduct,
+} from "../js/catalog.js";
+import { products as defaultProductSeed } from "../js/products.js";
+
+const app = document.getElementById("app");
+const STORAGE_KEYS = {
+  auth: "adminAuth",
+  owner: "adminOwner",
+  categories: "fashionStoreAdminCategories",
+  subcategories: "fashionStoreAdminSubcategories",
+  selectedCategory: "fashionStoreAdminSelectedCategory",
+  currentSection: "fashionStoreAdminCurrentSection",
+  settings: "fashionStoreAdminSettings",
+  users: "fashionStoreAdminUsers",
+  products: CATALOG_STORAGE_KEY,
+  stories: "fashionStoreAdminStories",
+};
 
   const DEFAULT_CATEGORIES = [
     "Платья",
@@ -284,9 +292,9 @@
     }
     if (sectionId === "categories") return renderCategoriesSection();
     if (sectionId === "subcategories") return renderSubcategoriesSection();
+    if (sectionId === "products") return renderProductsSection();
 
     const sectionMap = {
-      products: "Раздел товаров будет добавлен на следующем этапе",
       orders: "Раздел заказов будет добавлен на следующем этапе",
       stories: "Раздел stories будет добавлен на следующем этапе",
       users: "Раздел пользователей будет добавлен на следующем этапе",
@@ -373,6 +381,74 @@
     `;
   }
 
+  function renderProductsSection() {
+    const catOptions = state.categories
+      .map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`)
+      .join("");
+    const rows = state.products
+      .map(
+        (p) => `
+      <tr>
+        <td>${escapeHtml(p.name)}</td>
+        <td>${escapeHtml(p.cat)}</td>
+        <td>${escapeHtml(String(p.price))}</td>
+        <td><button type="button" class="btn btn-ghost btn-sm" data-delete-product-id="${escapeHtml(p.id)}">Удалить</button></td>
+      </tr>`
+      )
+      .join("");
+
+    return `
+      <article class="stub-card">
+        <h3 class="stub-title">Товары</h3>
+        <p class="stub-text">Тот же список, что на витрине (ключ localStorage: <code>${escapeHtml(
+          CATALOG_STORAGE_KEY
+        )}</code>).</p>
+        <div class="product-form-grid">
+          <div class="field">
+            <label class="label" for="productName">Название</label>
+            <input class="input" id="productName" type="text" placeholder="Например, Платье миди" />
+          </div>
+          <div class="field">
+            <label class="label" for="productCat">Категория</label>
+            <select class="input" id="productCat">
+              <option value="">Выберите категорию</option>
+              ${catOptions}
+            </select>
+          </div>
+          <div class="field">
+            <label class="label" for="productPrice">Цена (₽)</label>
+            <input class="input" id="productPrice" type="number" min="0" step="1" placeholder="4900" />
+          </div>
+          <div class="field field-span-2">
+            <label class="label" for="productDesc">Описание</label>
+            <input class="input" id="productDesc" type="text" placeholder="Краткое описание" />
+          </div>
+          <div class="field">
+            <label class="label" for="productImage">Фото (URL или путь)</label>
+            <input class="input" id="productImage" type="text" placeholder="images/item.jpg" />
+          </div>
+          <div class="field">
+            <label class="label" for="productVideo">Видео (необязательно)</label>
+            <input class="input" id="productVideo" type="text" placeholder="videos/item.mp4" />
+          </div>
+          <div class="field field-span-2">
+            <label class="label" for="productColors">Цвета (через запятую: red, #222 или названия)</label>
+            <input class="input" id="productColors" type="text" placeholder="pink, beige, black" />
+          </div>
+        </div>
+        <div class="btn-row">
+          <button type="button" id="addProductBtn" class="btn btn-primary">Добавить товар</button>
+        </div>
+        <div id="productsMessage"></div>
+        ${
+          state.products.length
+            ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Название</th><th>Категория</th><th>Цена</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+            : '<p class="stub-text">Пока нет товаров — добавьте первый или откройте витрину для стартового набора.</p>'
+        }
+      </article>
+    `;
+  }
+
   function bindAdminEvents() {
     document.getElementById("adminNav").addEventListener("click", function (event) {
       const btn = event.target.closest("[data-section]");
@@ -394,6 +470,7 @@
   function bindSectionEvents() {
     if (state.currentSection === "categories") bindCategoriesEvents();
     if (state.currentSection === "subcategories") bindSubcategoriesEvents();
+    if (state.currentSection === "products") bindProductsEvents();
   }
 
   function bindCategoriesEvents() {
@@ -479,13 +556,88 @@
     });
   }
 
+  function bindProductsEvents() {
+    const addBtn = document.getElementById("addProductBtn");
+    const section = document.getElementById("sectionContent");
+    if (!addBtn || !section) return;
+
+    addBtn.addEventListener("click", function () {
+      const name = document.getElementById("productName").value.trim();
+      const cat = document.getElementById("productCat").value.trim();
+      const priceRaw = document.getElementById("productPrice").value.trim();
+      const desc = document.getElementById("productDesc").value.trim();
+      const image = document.getElementById("productImage").value.trim();
+      const videoRaw = document.getElementById("productVideo").value.trim();
+      const colorsRaw = document.getElementById("productColors").value.trim();
+
+      if (!name) {
+        showSectionMessage("productsMessage", "msg-error", "Введите название товара");
+        return;
+      }
+      if (!cat) {
+        showSectionMessage("productsMessage", "msg-error", "Выберите категорию");
+        return;
+      }
+      const price = Number(priceRaw);
+      if (!Number.isFinite(price) || price < 0) {
+        showSectionMessage("productsMessage", "msg-error", "Укажите корректную цену");
+        return;
+      }
+      if (!image) {
+        showSectionMessage("productsMessage", "msg-error", "Укажите путь или URL изображения");
+        return;
+      }
+
+      const colors = colorsRaw
+        ? colorsRaw.split(",").map((c) => c.trim()).filter(Boolean)
+        : ["#ccc"];
+      const draft = {
+        name,
+        cat,
+        price,
+        desc,
+        image,
+        images: [image],
+        video: videoRaw || null,
+        colors,
+      };
+      const normalized = normalizeProduct(draft);
+      if (!normalized) {
+        showSectionMessage("productsMessage", "msg-error", "Не удалось сохранить товар");
+        return;
+      }
+      const dup = state.products.some(
+        (p) => p.name.toLowerCase() === normalized.name.toLowerCase() && p.cat === normalized.cat
+      );
+      if (dup) {
+        showSectionMessage("productsMessage", "msg-error", "Товар с таким названием уже есть в этой категории");
+        return;
+      }
+      state.products = [...state.products, normalized];
+      persistProducts();
+      renderAdmin();
+    });
+
+    section.addEventListener("click", function (event) {
+      const del = event.target.closest("[data-delete-product-id]");
+      if (!del) return;
+      const id = del.dataset.deleteProductId;
+      state.products = state.products.filter((p) => p.id !== id);
+      persistProducts();
+      renderAdmin();
+    });
+  }
+
+  function persistProducts() {
+    saveCatalogProducts(state.products);
+  }
+
   function initStorageDefaults() {
     writeIfMissing(STORAGE_KEYS.categories, DEFAULT_CATEGORIES);
     writeIfMissing(STORAGE_KEYS.subcategories, {});
     writeIfMissing(STORAGE_KEYS.selectedCategory, "");
     writeIfMissing(STORAGE_KEYS.settings, {});
     writeIfMissing(STORAGE_KEYS.users, []);
-    writeIfMissing(STORAGE_KEYS.products, []);
     writeIfMissing(STORAGE_KEYS.stories, []);
     writeIfMissing(STORAGE_KEYS.currentSection, "dashboard");
   }
@@ -498,7 +650,8 @@
     state.selectedCategory = readFromStorage(STORAGE_KEYS.selectedCategory, "");
     state.settings = readFromStorage(STORAGE_KEYS.settings, {});
     state.users = readFromStorage(STORAGE_KEYS.users, []);
-    state.products = readFromStorage(STORAGE_KEYS.products, []);
+    ensureCatalogStorageReady(defaultProductSeed);
+    state.products = loadCatalogProducts(defaultProductSeed);
     state.stories = readFromStorage(STORAGE_KEYS.stories, []);
     state.currentSection = readFromStorage(STORAGE_KEYS.currentSection, "dashboard");
     if (!sections.some((item) => item.id === state.currentSection)) {
@@ -579,4 +732,3 @@
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#39;");
   }
-})();

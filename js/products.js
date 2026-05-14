@@ -1,6 +1,7 @@
-/** Каталог: замените image/video на свои файлы в assets/images и assets/videos */
+/** Стартовый каталог (сид). Живая витрина читает копию из localStorage — см. js/catalog.js */
 export const products = [
   {
+    id: "seed-dress-1",
     name: "Платье",
     cat: "Платья",
     price: 4900,
@@ -11,6 +12,7 @@ export const products = [
     video: "bc71b0b3c6396541a06aa01851812689.mp4",
   },
   {
+    id: "seed-suit-1",
     name: "Костюм спортивный",
     cat: "Костюмы спортивные",
     price: 6500,
@@ -20,6 +22,7 @@ export const products = [
     video: null,
   },
   {
+    id: "seed-jeans-1",
     name: "Джинсы",
     cat: "Джинсы",
     price: 3500,
@@ -28,15 +31,4 @@ export const products = [
     image: "assets/images/jeans.jpg",
     video: null,
   },
-];
-
-export const categories = [
-  "Все",
-  "Платья",
-  "Юбки",
-  "Джинсы",
-  "Брюки",
-  "Костюмы спортивные",
-  "Костюмы классические",
-  "Пиджаки",
 ];
