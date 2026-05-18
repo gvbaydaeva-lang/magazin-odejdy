@@ -27,6 +27,72 @@
     address: "",
   };
 
+  var PRODUCT_SIZE_OPTIONS = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "One size"];
+
+  var PRESET_COLORS = [
+    "Черный",
+    "Белый",
+    "Бежевый",
+    "Молочный",
+    "Коричневый",
+    "Серый",
+    "Розовый",
+    "Красный",
+    "Зеленый",
+    "Синий",
+    "Голубой",
+    "Бордовый",
+  ];
+
+  var COLOR_HEX = {
+    Черный: "#1a1a1a",
+    Белый: "#ffffff",
+    Бежевый: "#d4b896",
+    Молочный: "#f5f0e8",
+    Коричневый: "#6c4831",
+    Серый: "#9e9e9e",
+    Розовый: "#e8a4b8",
+    Красный: "#c62828",
+    Зеленый: "#2e7d32",
+    Синий: "#1565c0",
+    Голубой: "#4fc3f7",
+    Бордовый: "#6d1b30",
+  };
+
+  function parseListField(value) {
+    if (Array.isArray(value)) {
+      return value
+        .map(function (item) {
+          return String(item).trim();
+        })
+        .filter(Boolean);
+    }
+    if (typeof value === "string" && value.trim()) {
+      return value
+        .split(",")
+        .map(function (item) {
+          return item.trim();
+        })
+        .filter(Boolean);
+    }
+    return [];
+  }
+
+  function colorToCss(colorName) {
+    var name = String(colorName || "").trim();
+    if (!name) return "#ccc";
+    if (name.charAt(0) === "#") return name;
+    if (COLOR_HEX[name]) return COLOR_HEX[name];
+    if (/^(rgb|hsl)a?\(/i.test(name)) return name;
+    return name;
+  }
+
+  function isStorefrontProduct(product) {
+    if (!product || typeof product !== "object") return false;
+    var images = Array.isArray(product.images) ? product.images : [];
+    return product.published === true && images.length > 0;
+  }
+
   var DEFAULT_SEED = [
     {
       id: "seed-dress-1",
@@ -108,24 +174,19 @@
     var desc = String(raw.desc || "").trim();
     var image = String(raw.image || "").trim();
     var video = raw.video ? String(raw.video).trim() : null;
-    var colors = Array.isArray(raw.colors)
-      ? raw.colors.map(function (c) {
-          return String(c).trim();
-        }).filter(Boolean)
-      : [];
-    if (!colors.length) colors = ["#ccc"];
-    var sizes = Array.isArray(raw.sizes)
-      ? raw.sizes.map(function (s) {
-          return String(s).trim();
-        }).filter(Boolean)
-      : [];
-    if (!sizes.length) sizes = ["S", "M", "L"];
+    var colors = parseListField(raw.colors);
+    var sizes = parseListField(raw.sizes);
     var images =
       Array.isArray(raw.images) && raw.images.length
-        ? raw.images.map(String)
+        ? raw.images
+            .map(function (src) {
+              return String(src).trim();
+            })
+            .filter(Boolean)
         : image
           ? [image]
           : [];
+    var published = images.length > 0;
     var id = raw.id ? String(raw.id) : stableId();
     return {
       id: id,
@@ -134,11 +195,12 @@
       subcat: subcat,
       price: Number.isFinite(price) ? price : 0,
       desc: desc,
-      image: image || images[0] || "",
+      image: images[0] || "",
       images: images,
       video: video,
       colors: colors,
       sizes: sizes,
+      published: published,
     };
   }
 
@@ -202,8 +264,13 @@
     ensureProductsSeed(seed);
     var s = Array.isArray(seed) ? seed : DEFAULT_SEED;
     var stored = loadProducts(seed);
-    if (stored === null) return s.map(normalizeProduct).filter(Boolean);
-    return stored.length ? stored : s.map(normalizeProduct).filter(Boolean);
+    var list =
+      stored === null
+        ? s.map(normalizeProduct).filter(Boolean)
+        : stored.length
+          ? stored
+          : s.map(normalizeProduct).filter(Boolean);
+    return list.filter(isStorefrontProduct);
   }
 
   function saveProducts(products) {
@@ -218,6 +285,11 @@
     DEFAULT_SEED: DEFAULT_SEED,
     DEFAULT_SETTINGS: DEFAULT_SETTINGS,
     normalizeProduct: normalizeProduct,
+    PRODUCT_SIZE_OPTIONS: PRODUCT_SIZE_OPTIONS,
+    PRESET_COLORS: PRESET_COLORS,
+    COLOR_HEX: COLOR_HEX,
+    colorToCss: colorToCss,
+    isStorefrontProduct: isStorefrontProduct,
     migrateStorage: migrateStorage,
     ensureProductsSeed: ensureProductsSeed,
     ensureCatalogStorageReady: ensureProductsSeed,

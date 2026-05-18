@@ -440,3 +440,131 @@ input {
     grid-column: span 1;
   }
 }
+
+.picker-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.picker-btn {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.picker-btn.is-active {
+  background: var(--accent, #6c4831);
+  color: #fffaf4;
+  border-color: var(--accent, #6c4831);
+}
+
+.picker-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  flex-shrink: 0;
+}
+
+.media-field .media-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.media-preview {
+  display: block;
+  max-width: 220px;
+  max-height: 220px;
+  margin-top: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  object-fit: cover;
+}
+
+.media-preview-empty {
+  padding: 16px;
+  font-size: 13px;
+  color: #7b706b;
+  background: #fff7f1;
+  max-width: 320px;
+}
+
+.media-preview-video {
+  display: block;
+  width: 100%;
+  max-width: 360px;
+  margin-top: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+}
+
+.custom-color-form {
+  margin-top: 10px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid var(--line);
+  background: #fff;
+  margin: 2px 4px 2px 0;
+}
+
+.badge-muted {
+  color: #7b706b;
+}
+
+.badge-success {
+  background: #e8f5e9;
+  border-color: #a5d6a7;
+  color: #2e7d32;
+}
+
+.badge-warn {
+  background: #fff3e0;
+  border-color: #ffcc80;
+  color: #e65100;
+}
+
+.badge-color .badge-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.product-thumb {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+.product-thumb-empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #7b706b;
+  background: #fff7f1;
+  padding: 4px;
+  text-align: center;
+}
+
+.product-row-status {
+  margin-top: 6px;
+}

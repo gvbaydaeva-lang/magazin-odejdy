@@ -17,6 +17,11 @@
 
   var normalizeProduct = Store.normalizeProduct;
   var defaultProductSeed = Store.DEFAULT_SEED;
+  var PRODUCT_SIZE_OPTIONS = Store.PRODUCT_SIZE_OPTIONS;
+  var PRESET_COLORS = Store.PRESET_COLORS;
+  var colorToCss = Store.colorToCss;
+  var MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+  var MAX_VIDEO_BYTES = 12 * 1024 * 1024;
   var STORAGE_KEYS = {
     auth: "adminAuth",
     owner: "adminOwner",
@@ -79,6 +84,9 @@
     message: null,
     editingSubcategory: null,
     editingProductId: null,
+    productDraftMedia: { image: null, video: null, imageName: "", videoName: "" },
+    productFormCustomColors: [],
+    lastEditingProductId: undefined,
   };
 
   bootstrap();
@@ -537,12 +545,187 @@
     );
   }
 
+  function syncProductFormSession() {
+    var key = state.editingProductId || "__new__";
+    if (state.lastEditingProductId === key) return;
+    state.lastEditingProductId = key;
+    state.productDraftMedia = { image: null, video: null, imageName: "", videoName: "" };
+    state.productFormCustomColors = [];
+    if (!state.editingProductId) return;
+    var editing = state.products.find(function (p) {
+      return p.id === state.editingProductId;
+    });
+    if (!editing) return;
+    var presetLower = {};
+    PRESET_COLORS.forEach(function (c) {
+      presetLower[c.toLowerCase()] = true;
+    });
+    (editing.colors || []).forEach(function (c) {
+      if (!presetLower[String(c).toLowerCase()]) state.productFormCustomColors.push(c);
+    });
+  }
+
+  function getEditingProduct() {
+    if (!state.editingProductId) return null;
+    return (
+      state.products.find(function (p) {
+        return p.id === state.editingProductId;
+      }) || null
+    );
+  }
+
+  function getPreviewImageSrc(editing) {
+    var m = state.productDraftMedia;
+    if (m.image !== null) return m.image || "";
+    if (editing && editing.images && editing.images[0]) return editing.images[0];
+    return "";
+  }
+
+  function getPreviewVideoSrc(editing) {
+    var m = state.productDraftMedia;
+    if (m.video !== null) return m.video || "";
+    if (editing && editing.video) return editing.video;
+    return "";
+  }
+
+  function resolveProductImages(editing) {
+    var m = state.productDraftMedia;
+    if (m.image !== null) {
+      if (!m.image) return [];
+      return [m.image];
+    }
+    if (editing && Array.isArray(editing.images) && editing.images.length) {
+      return editing.images.slice();
+    }
+    return [];
+  }
+
+  function resolveProductVideo(editing) {
+    var m = state.productDraftMedia;
+    if (m.video !== null) return m.video || null;
+    if (editing && editing.video) return editing.video;
+    return null;
+  }
+
+  function renderBadgeList(items, extraClass) {
+    if (!items || !items.length) {
+      return '<span class="badge badge-muted">—</span>';
+    }
+    return items
+      .map(function (item) {
+        return '<span class="badge ' + (extraClass || "") + '">' + escapeHtml(item) + "</span>";
+      })
+      .join("");
+  }
+
+  function renderColorBadgesAdmin(colors) {
+    if (!colors || !colors.length) {
+      return '<span class="badge badge-muted">—</span>';
+    }
+    return colors
+      .map(function (c) {
+        var bg = colorToCss(c);
+        return (
+          '<span class="badge badge-color"><span class="badge-swatch" style="background:' +
+          escapeHtml(bg) +
+          '"></span>' +
+          escapeHtml(c) +
+          "</span>"
+        );
+      })
+      .join("");
+  }
+
+  function buildSizePickerHtml(selected) {
+    var set = {};
+    (selected || []).forEach(function (s) {
+      set[s] = true;
+    });
+    return PRODUCT_SIZE_OPTIONS.map(function (size) {
+      var active = set[size] ? " is-active" : "";
+      return (
+        '<button type="button" class="picker-btn picker-size' +
+        active +
+        '" data-size-option="' +
+        escapeHtml(size) +
+        '">' +
+        escapeHtml(size) +
+        "</button>"
+      );
+    }).join("");
+  }
+
+  function buildColorPickerHtml(selected, customColors) {
+    var set = {};
+    (selected || []).forEach(function (c) {
+      set[c] = true;
+    });
+    var presetHtml = PRESET_COLORS.map(function (color) {
+      var active = set[color] ? " is-active" : "";
+      var bg = colorToCss(color);
+      return (
+        '<button type="button" class="picker-btn picker-color' +
+        active +
+        '" data-color-option="' +
+        escapeHtml(color) +
+        '"><span class="picker-swatch" style="background:' +
+        escapeHtml(bg) +
+        '"></span>' +
+        escapeHtml(color) +
+        "</button>"
+      );
+    }).join("");
+    var customHtml = (customColors || [])
+      .filter(function (c, idx, arr) {
+        return arr.findIndex(function (x) {
+          return x.toLowerCase() === c.toLowerCase();
+        }) === idx;
+      })
+      .map(function (color) {
+        var active = set[color] ? " is-active" : "";
+        var bg = colorToCss(color);
+        return (
+          '<button type="button" class="picker-btn picker-color picker-color-custom' +
+          active +
+          '" data-color-option="' +
+          escapeHtml(color) +
+          '"><span class="picker-swatch" style="background:' +
+          escapeHtml(bg) +
+          '"></span>' +
+          escapeHtml(color) +
+          "</button>"
+        );
+      })
+      .join("");
+    return presetHtml + customHtml;
+  }
+
+  function readFileAsDataURL(file, maxBytes, done) {
+    if (!file) {
+      done(new Error("Файл не выбран"));
+      return;
+    }
+    if (file.size > maxBytes) {
+      done(
+        new Error(
+          "Файл слишком большой (макс. " + Math.round(maxBytes / 1024 / 1024) + " МБ)"
+        )
+      );
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function () {
+      done(null, reader.result, file.name);
+    };
+    reader.onerror = function () {
+      done(new Error("Не удалось прочитать файл"));
+    };
+    reader.readAsDataURL(file);
+  }
+
   function renderProductsSection() {
-    var editing = state.editingProductId
-      ? state.products.find(function (p) {
-          return p.id === state.editingProductId;
-        })
-      : null;
+    syncProductFormSession();
+    var editing = getEditingProduct();
     var formCat = editing ? editing.cat : "";
     var formSub = editing ? editing.subcat || "" : "";
     var catOptions = state.categories
@@ -557,14 +740,32 @@
       : !(state.subcategories[formCat] || []).length
         ? "У этой категории пока нет подкатегорий"
         : "";
+    var previewImage = getPreviewImageSrc(editing);
+    var previewVideo = getPreviewVideoSrc(editing);
+    var selectedSizes = editing ? editing.sizes || [] : [];
+    var selectedColors = editing ? editing.colors || [] : [];
+    var imageHint = state.productDraftMedia.imageName || (previewImage ? "Фото загружено" : "");
+    var videoHint =
+      state.productDraftMedia.videoName || (previewVideo ? "Видео загружено" : "Видео не выбрано");
+
     var rows = state.products
       .map(function (p) {
+        var thumb =
+          p.images && p.images[0]
+            ? '<img class="product-thumb" src="' + escapeHtml(p.images[0]) + '" alt="" />'
+            : '<span class="product-thumb product-thumb-empty">нет фото</span>';
+        var status = p.published
+          ? '<span class="badge badge-success">На витрине</span>'
+          : '<span class="badge badge-warn">Не опубликован на витрине: добавьте фото</span>';
         return (
           "<tr>" +
-          "<td>" + escapeHtml(p.name) + "</td>" +
+          "<td>" + thumb + "</td>" +
+          "<td>" + escapeHtml(p.name) + '<div class="product-row-status">' + status + "</div></td>" +
           "<td>" + escapeHtml(p.cat) + "</td>" +
           "<td>" + escapeHtml(p.subcat || "—") + "</td>" +
-          "<td>" + escapeHtml(String(p.price)) + "</td>" +
+          "<td>" + renderBadgeList(p.sizes, "badge-size") + "</td>" +
+          "<td>" + renderColorBadgesAdmin(p.colors) + "</td>" +
+          "<td>" + escapeHtml(String(p.price)) + " ₽</td>" +
           '<td><button type="button" class="btn btn-ghost btn-sm" data-edit-product-id="' +
           escapeHtml(p.id) +
           '">Редактировать</button> ' +
@@ -578,7 +779,7 @@
     return (
       '<article class="stub-card">' +
       '<h3 class="stub-title">Товары</h3>' +
-      '<p class="stub-text">Общий каталог с витриной (ключ: <code>fashion_products</code>).</p>' +
+      '<p class="stub-text">Общий каталог с витриной (ключ: <code>fashion_products</code>). Без фото товар сохраняется, но на сайте не показывается.</p>' +
       '<div class="product-form-grid">' +
       '<div class="field"><label class="label" for="productName">Название</label>' +
       '<input class="input" id="productName" type="text" value="' + escapeHtml(editing ? editing.name : "") + '" placeholder="Например, Платье миди" /></div>' +
@@ -591,22 +792,49 @@
       '<input class="input" id="productPrice" type="number" min="0" step="1" value="' + escapeHtml(editing ? String(editing.price) : "") + '" placeholder="4900" /></div>' +
       '<div class="field field-span-2"><label class="label" for="productDesc">Описание</label>' +
       '<input class="input" id="productDesc" type="text" value="' + escapeHtml(editing ? editing.desc : "") + '" placeholder="Краткое описание" /></div>' +
-      '<div class="field"><label class="label" for="productImage">Фото (URL или путь)</label>' +
-      '<input class="input" id="productImage" type="text" value="' + escapeHtml(editing ? editing.image : "") + '" placeholder="images/item.jpg" /></div>' +
-      '<div class="field"><label class="label" for="productVideo">Видео (необязательно)</label>' +
-      '<input class="input" id="productVideo" type="text" value="' + escapeHtml(editing && editing.video ? editing.video : "") + '" placeholder="videos/item.mp4" /></div>' +
-      '<div class="field field-span-2"><label class="label" for="productColors">Цвета (через запятую)</label>' +
-      '<input class="input" id="productColors" type="text" value="' + escapeHtml(editing ? (editing.colors || []).join(", ") : "") + '" placeholder="pink, beige, black" /></div>' +
-      '<div class="field field-span-2"><label class="label" for="productSizes">Размеры (через запятую)</label>' +
-      '<input class="input" id="productSizes" type="text" value="' + escapeHtml(editing ? (editing.sizes || []).join(", ") : "S, M, L") + '" placeholder="S, M, L" /></div>' +
-      '</div>' +
+      '<div class="field field-span-2 media-field"><label class="label">Фото товара</label>' +
+      '<input type="file" id="productImageFile" accept="image/*" hidden />' +
+      '<div class="media-actions">' +
+      '<button type="button" class="btn btn-ghost" id="productImagePickBtn">Загрузить фото</button>' +
+      '<button type="button" class="btn btn-ghost" id="productImageClearBtn">Удалить фото</button>' +
+      "</div>" +
+      '<p class="stub-text" id="productImageHint">' + escapeHtml(imageHint) + "</p>" +
+      (previewImage
+        ? '<img class="media-preview" id="productImagePreview" src="' + escapeHtml(previewImage) + '" alt="Превью" />'
+        : '<div class="media-preview media-preview-empty" id="productImagePreview">Превью появится после загрузки</div>') +
+      "</div>" +
+      '<div class="field field-span-2 media-field"><label class="label">Видео товара (необязательно)</label>' +
+      '<input type="file" id="productVideoFile" accept="video/mp4,video/*" hidden />' +
+      '<div class="media-actions">' +
+      '<button type="button" class="btn btn-ghost" id="productVideoPickBtn">Загрузить видео</button>' +
+      '<button type="button" class="btn btn-ghost" id="productVideoClearBtn">Удалить видео</button>' +
+      "</div>" +
+      '<p class="stub-text" id="productVideoHint">' + escapeHtml(videoHint) + "</p>" +
+      (previewVideo
+        ? '<video class="media-preview-video" id="productVideoPreview" controls playsinline src="' +
+          escapeHtml(previewVideo) +
+          '"></video>'
+        : "") +
+      "</div>" +
+      '<div class="field field-span-2"><label class="label">Размеры</label>' +
+      '<div class="picker-group" id="productSizesPicker">' +
+      buildSizePickerHtml(selectedSizes) +
+      "</div></div>" +
+      '<div class="field field-span-2"><label class="label">Цвета</label>' +
+      '<div class="picker-group" id="productColorsPicker">' +
+      buildColorPickerHtml(selectedColors, state.productFormCustomColors) +
+      "</div>" +
+      '<div class="inline-form custom-color-form">' +
+      '<input class="input" id="productCustomColorInput" type="text" placeholder="Добавить свой цвет" />' +
+      '<button type="button" class="btn btn-ghost" id="productAddCustomColorBtn">Добавить</button>' +
+      "</div></div>" +
       '<div class="btn-row">' +
       '<button type="button" id="addProductBtn" class="btn btn-primary">' + (editing ? "Сохранить изменения" : "Добавить товар") + '</button>' +
       (editing ? '<button type="button" id="cancelProductEdit" class="btn btn-ghost">Отмена</button>' : "") +
       '</div>' +
       '<div id="productsMessage"></div>' +
       (state.products.length
-        ? '<div class="table-wrap"><table class="data-table"><thead><tr><th>Название</th><th>Категория</th><th>Подкатегория</th><th>Цена</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+        ? '<div class="table-wrap"><table class="data-table"><thead><tr><th>Фото</th><th>Название</th><th>Категория</th><th>Подкатегория</th><th>Размеры</th><th>Цвета</th><th>Цена</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
         : '<p class="stub-text">Пока нет товаров — добавьте первый или откройте витрину для стартового набора.</p>') +
       '</article>'
     );
@@ -883,7 +1111,129 @@
     if (cancelBtn) {
       cancelBtn.addEventListener("click", function () {
         state.editingProductId = null;
+        state.lastEditingProductId = undefined;
         renderAdmin();
+      });
+    }
+
+    function collectSelectedSizes() {
+      var nodes = document.querySelectorAll("#productSizesPicker .picker-btn.is-active");
+      return Array.prototype.map.call(nodes, function (btn) {
+        return btn.dataset.sizeOption;
+      });
+    }
+
+    function collectSelectedColors() {
+      var nodes = document.querySelectorAll("#productColorsPicker .picker-btn.is-active");
+      return Array.prototype.map.call(nodes, function (btn) {
+        return btn.dataset.colorOption;
+      });
+    }
+
+    function wirePickerToggle(containerId) {
+      var container = document.getElementById(containerId);
+      if (!container) return;
+      container.addEventListener("click", function (event) {
+        var btn = event.target.closest(".picker-btn");
+        if (!btn) return;
+        btn.classList.toggle("is-active");
+      });
+    }
+
+    wirePickerToggle("productSizesPicker");
+    wirePickerToggle("productColorsPicker");
+
+    var imageFileInput = document.getElementById("productImageFile");
+    var videoFileInput = document.getElementById("productVideoFile");
+    var imagePickBtn = document.getElementById("productImagePickBtn");
+    var videoPickBtn = document.getElementById("productVideoPickBtn");
+    var imageClearBtn = document.getElementById("productImageClearBtn");
+    var videoClearBtn = document.getElementById("productVideoClearBtn");
+    var addCustomColorBtn = document.getElementById("productAddCustomColorBtn");
+
+    if (imagePickBtn && imageFileInput) {
+      imagePickBtn.addEventListener("click", function () {
+        imageFileInput.click();
+      });
+      imageFileInput.addEventListener("change", function () {
+        var file = imageFileInput.files && imageFileInput.files[0];
+        if (!file) return;
+        readFileAsDataURL(file, MAX_IMAGE_BYTES, function (err, dataUrl, fileName) {
+          if (err) {
+            showSectionMessage("productsMessage", "msg-error", err.message);
+            imageFileInput.value = "";
+            return;
+          }
+          state.productDraftMedia.image = dataUrl;
+          state.productDraftMedia.imageName = fileName;
+          renderAdmin();
+        });
+      });
+    }
+
+    if (imageClearBtn) {
+      imageClearBtn.addEventListener("click", function () {
+        state.productDraftMedia.image = "";
+        state.productDraftMedia.imageName = "";
+        if (imageFileInput) imageFileInput.value = "";
+        renderAdmin();
+      });
+    }
+
+    if (videoPickBtn && videoFileInput) {
+      videoPickBtn.addEventListener("click", function () {
+        videoFileInput.click();
+      });
+      videoFileInput.addEventListener("change", function () {
+        var file = videoFileInput.files && videoFileInput.files[0];
+        if (!file) return;
+        readFileAsDataURL(file, MAX_VIDEO_BYTES, function (err, dataUrl, fileName) {
+          if (err) {
+            showSectionMessage("productsMessage", "msg-error", err.message);
+            videoFileInput.value = "";
+            return;
+          }
+          state.productDraftMedia.video = dataUrl;
+          state.productDraftMedia.videoName = fileName;
+          renderAdmin();
+        });
+      });
+    }
+
+    if (videoClearBtn) {
+      videoClearBtn.addEventListener("click", function () {
+        state.productDraftMedia.video = "";
+        state.productDraftMedia.videoName = "";
+        if (videoFileInput) videoFileInput.value = "";
+        renderAdmin();
+      });
+    }
+
+    if (addCustomColorBtn) {
+      addCustomColorBtn.addEventListener("click", function () {
+        var input = document.getElementById("productCustomColorInput");
+        if (!input) return;
+        var value = input.value.trim();
+        if (!value) return;
+        var exists = state.productFormCustomColors.some(function (c) {
+          return c.toLowerCase() === value.toLowerCase();
+        });
+        var presetExists = PRESET_COLORS.some(function (c) {
+          return c.toLowerCase() === value.toLowerCase();
+        });
+        if (!exists && !presetExists) state.productFormCustomColors.push(value);
+        input.value = "";
+        renderAdmin();
+        setTimeout(function () {
+          document.querySelectorAll("#productColorsPicker .picker-btn").forEach(function (btn) {
+            if (
+              btn.dataset.colorOption &&
+              btn.dataset.colorOption.toLowerCase() === value.toLowerCase()
+            ) {
+              btn.classList.add("is-active");
+            }
+          });
+        }, 0);
       });
     }
 
@@ -893,10 +1243,11 @@
       var subcat = document.getElementById("productSubcat").value.trim();
       var priceRaw = document.getElementById("productPrice").value.trim();
       var desc = document.getElementById("productDesc").value.trim();
-      var image = document.getElementById("productImage").value.trim();
-      var videoRaw = document.getElementById("productVideo").value.trim();
-      var colorsRaw = document.getElementById("productColors").value.trim();
-      var sizesRaw = document.getElementById("productSizes").value.trim();
+      var editing = getEditingProduct();
+      var images = resolveProductImages(editing);
+      var video = resolveProductVideo(editing);
+      var colors = collectSelectedColors();
+      var sizes = collectSelectedSizes();
 
       if (!name) {
         showSectionMessage("productsMessage", "msg-error", "Введите название товара");
@@ -911,22 +1262,16 @@
         showSectionMessage("productsMessage", "msg-error", "Укажите корректную цену");
         return;
       }
-      if (!image) {
-        showSectionMessage("productsMessage", "msg-error", "Укажите путь или URL изображения");
-        return;
-      }
 
-      var colors = colorsRaw ? colorsRaw.split(",").map(function (c) { return c.trim(); }).filter(Boolean) : ["#ccc"];
-      var sizes = sizesRaw ? sizesRaw.split(",").map(function (x) { return x.trim(); }).filter(Boolean) : ["S", "M", "L"];
       var draft = {
         name: name,
         cat: cat,
         subcat: subcat,
         price: price,
         desc: desc,
-        image: image,
-        images: [image],
-        video: videoRaw || null,
+        images: images,
+        image: images[0] || "",
+        video: video,
         colors: colors,
         sizes: sizes,
       };
@@ -951,7 +1296,15 @@
         copy[idx] = normalizedEdit;
         state.products = copy;
         state.editingProductId = null;
+        state.lastEditingProductId = undefined;
         persistProducts();
+        showSectionMessage(
+          "productsMessage",
+          normalizedEdit.published ? "msg-success" : "msg-info",
+          normalizedEdit.published
+            ? "Товар сохранён"
+            : "Товар сохранён. На витрине не показывается — добавьте фото."
+        );
         renderAdmin();
         return;
       }
@@ -969,7 +1322,15 @@
         return;
       }
       state.products = state.products.concat([normalized]);
+      state.lastEditingProductId = undefined;
       persistProducts();
+      showSectionMessage(
+        "productsMessage",
+        normalized.published ? "msg-success" : "msg-info",
+        normalized.published
+          ? "Товар добавлен"
+          : "Товар сохранён. На витрине не показывается — добавьте фото."
+      );
       renderAdmin();
     });
 
@@ -977,6 +1338,7 @@
       var editBtn = event.target.closest("[data-edit-product-id]");
       if (editBtn) {
         state.editingProductId = editBtn.dataset.editProductId;
+        state.lastEditingProductId = undefined;
         renderAdmin();
         return;
       }

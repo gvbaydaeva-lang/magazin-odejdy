@@ -27,6 +27,66 @@ export const DEFAULT_SETTINGS = {
   address: "",
 };
 
+export const PRODUCT_SIZE_OPTIONS = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "One size"];
+
+export const PRESET_COLORS = [
+  "Черный",
+  "Белый",
+  "Бежевый",
+  "Молочный",
+  "Коричневый",
+  "Серый",
+  "Розовый",
+  "Красный",
+  "Зеленый",
+  "Синий",
+  "Голубой",
+  "Бордовый",
+];
+
+export const COLOR_HEX = {
+  Черный: "#1a1a1a",
+  Белый: "#ffffff",
+  Бежевый: "#d4b896",
+  Молочный: "#f5f0e8",
+  Коричневый: "#6c4831",
+  Серый: "#9e9e9e",
+  Розовый: "#e8a4b8",
+  Красный: "#c62828",
+  Зеленый: "#2e7d32",
+  Синий: "#1565c0",
+  Голубой: "#4fc3f7",
+  Бордовый: "#6d1b30",
+};
+
+function parseListField(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+  if (typeof value === "string" && value.trim()) {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+export function colorToCss(colorName) {
+  const name = String(colorName || "").trim();
+  if (!name) return "#ccc";
+  if (name.startsWith("#")) return name;
+  if (COLOR_HEX[name]) return COLOR_HEX[name];
+  if (/^(rgb|hsl)a?\(/i.test(name)) return name;
+  return name;
+}
+
+export function isStorefrontProduct(product) {
+  if (!product || typeof product !== "object") return false;
+  const images = Array.isArray(product.images) ? product.images : [];
+  return product.published === true && images.length > 0;
+}
+
 function stableId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
   return `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -68,11 +128,15 @@ export function normalizeProduct(raw) {
   const desc = String(raw.desc || "").trim();
   const image = String(raw.image || "").trim();
   const video = raw.video ? String(raw.video).trim() : null;
-  let colors = Array.isArray(raw.colors) ? raw.colors.map((c) => String(c).trim()).filter(Boolean) : [];
-  if (!colors.length) colors = ["#ccc"];
-  let sizes = Array.isArray(raw.sizes) ? raw.sizes.map((s) => String(s).trim()).filter(Boolean) : [];
-  if (!sizes.length) sizes = ["S", "M", "L"];
-  const images = Array.isArray(raw.images) && raw.images.length ? raw.images.map(String) : image ? [image] : [];
+  const colors = parseListField(raw.colors);
+  const sizes = parseListField(raw.sizes);
+  const images =
+    Array.isArray(raw.images) && raw.images.length
+      ? raw.images.map((src) => String(src).trim()).filter(Boolean)
+      : image
+        ? [image]
+        : [];
+  const published = images.length > 0;
   const id = raw.id ? String(raw.id) : stableId();
   return {
     id,
@@ -81,11 +145,12 @@ export function normalizeProduct(raw) {
     subcat,
     price: Number.isFinite(price) ? price : 0,
     desc,
-    image: image || images[0] || "",
+    image: images[0] || "",
     images,
     video,
     colors,
     sizes,
+    published,
   };
 }
 
@@ -201,6 +266,11 @@ export function saveStories(list) {
 export function loadProductsForStorefront(seed) {
   ensureProductsSeed(seed);
   const stored = loadProducts(seed);
-  if (stored === null) return seed.map(normalizeProduct).filter(Boolean);
-  return stored.length ? stored : seed.map(normalizeProduct).filter(Boolean);
+  const list =
+    stored === null
+      ? seed.map(normalizeProduct).filter(Boolean)
+      : stored.length
+        ? stored
+        : seed.map(normalizeProduct).filter(Boolean);
+  return list.filter(isStorefrontProduct);
 }

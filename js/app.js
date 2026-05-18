@@ -6,6 +6,7 @@ import {
   loadProductsForStorefront,
   loadCategories,
   loadSettings,
+  colorToCss,
 } from "./store.js";
 
 let selectedCat = "Все";
@@ -21,6 +22,40 @@ function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
+}
+
+function appendColorBadges(container, colors, options = {}) {
+  const { selectable = false, selected = null } = options;
+  (colors || []).forEach((colorName) => {
+    const el = document.createElement(selectable ? "button" : "span");
+    el.className = "color-badge" + (selectable && selected === colorName ? " selected" : "");
+    if (selectable) {
+      el.type = "button";
+      el.dataset.modalColor = colorName;
+    }
+    const swatch = document.createElement("span");
+    swatch.className = "color-swatch";
+    swatch.style.background = colorToCss(colorName);
+    el.appendChild(swatch);
+    el.appendChild(document.createTextNode(colorName));
+    container.appendChild(el);
+  });
+}
+
+function appendSizeBadges(container, sizes, options = {}) {
+  const { selectable = false, selected = null } = options;
+  (sizes || []).forEach((sizeLabel) => {
+    const el = document.createElement(selectable ? "button" : "span");
+    if (selectable) {
+      el.type = "button";
+      el.dataset.modalSize = sizeLabel;
+      el.className = selected === sizeLabel ? "selected" : "";
+    } else {
+      el.className = "size-badge";
+    }
+    el.textContent = sizeLabel;
+    container.appendChild(el);
+  });
 }
 
 function categoryFiltersFromStorage() {
@@ -101,19 +136,19 @@ function renderProducts() {
       price.textContent = `${p.price} ₽`;
 
       const colors = document.createElement("div");
-      colors.className = "colors";
-      p.colors.forEach((c) => {
-        const dot = document.createElement("div");
-        dot.className = "color";
-        dot.style.background = c;
-        colors.appendChild(dot);
-      });
+      colors.className = "product-colors";
+      appendColorBadges(colors, p.colors);
+
+      const sizesRow = document.createElement("div");
+      sizesRow.className = "product-sizes";
+      appendSizeBadges(sizesRow, p.sizes);
 
       div.appendChild(imgWrap);
       div.appendChild(title);
       div.appendChild(meta);
       div.appendChild(price);
-      div.appendChild(colors);
+      if (p.colors && p.colors.length) div.appendChild(colors);
+      if (p.sizes && p.sizes.length) div.appendChild(sizesRow);
 
       div.addEventListener("click", (e) => {
         if (e.target.closest(".product-image")) return;
@@ -136,10 +171,14 @@ function openVideoModal(video, product = null) {
   v.setAttribute("playsinline", "");
   v.setAttribute("controls", "");
   v.style.width = "100%";
-  const source = document.createElement("source");
-  source.src = video;
-  source.type = "video/mp4";
-  v.appendChild(source);
+  if (String(video).startsWith("data:")) {
+    v.src = video;
+  } else {
+    const source = document.createElement("source");
+    source.src = video;
+    source.type = "video/mp4";
+    v.appendChild(source);
+  }
   box.appendChild(v);
   $("videoModal").style.display = "flex";
 }
@@ -215,7 +254,8 @@ function openProductModal(p) {
   let color = null;
   const gallery = Array.isArray(p.images) && p.images.length ? p.images : [p.image];
   let activeImage = gallery[0];
-  const sizes = Array.isArray(p.sizes) && p.sizes.length ? p.sizes : ["S", "M", "L"];
+  const sizes = Array.isArray(p.sizes) ? p.sizes : [];
+  const colors = Array.isArray(p.colors) ? p.colors : [];
 
   function renderModal() {
     const subLine = p.subcat
@@ -249,25 +289,12 @@ function openProductModal(p) {
     `;
 
     const colorsEl = content.querySelector("#modalColors");
-    p.colors.forEach((c) => {
-      const sw = document.createElement("div");
-      sw.className = "modal-color" + (color === c ? " selected" : "");
-      sw.style.background = c;
-      sw.dataset.modalColor = c;
-      sw.setAttribute("role", "button");
-      sw.tabIndex = 0;
-      colorsEl.appendChild(sw);
-    });
+    colorsEl.className = "product-colors modal-colors";
+    appendColorBadges(colorsEl, colors, { selectable: true, selected: color });
 
     const sizesEl = content.querySelector("#modalSizes");
-    sizes.forEach((s) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = size === s ? "selected" : "";
-      btn.dataset.modalSize = s;
-      btn.textContent = s;
-      sizesEl.appendChild(btn);
-    });
+    sizesEl.className = "sizes product-sizes-modal";
+    appendSizeBadges(sizesEl, sizes, { selectable: true, selected: size });
 
     const galleryEl = content.querySelector("#modalGallery");
     gallery.forEach((imgSrc) => {
@@ -282,13 +309,15 @@ function openProductModal(p) {
 
   content.onclick = (e) => {
     const target = e.target;
-    if (target.dataset.modalColor !== undefined) {
-      color = target.dataset.modalColor;
+    const colorBtn = target.closest("[data-modal-color]");
+    if (colorBtn) {
+      color = colorBtn.dataset.modalColor;
       renderModal();
       return;
     }
-    if (target.dataset.modalSize !== undefined) {
-      size = target.dataset.modalSize;
+    const sizeBtn = target.closest("[data-modal-size]");
+    if (sizeBtn) {
+      size = sizeBtn.dataset.modalSize;
       renderModal();
       return;
     }
@@ -308,8 +337,12 @@ function openProductModal(p) {
       return;
     }
     if (target.dataset.action === "add") {
-      if (!size || !color) {
-        alert("Выберите размер и цвет");
+      if (sizes.length && !size) {
+        alert("Выберите размер");
+        return;
+      }
+      if (colors.length && !color) {
+        alert("Выберите цвет");
         return;
       }
       cart.push({ ...p, size, color });

@@ -267,6 +267,57 @@ select {
   margin: 4px 0;
 }
 
+.product-colors,
+.modal-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.color-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #cbb39a;
+  background: #f7ede3;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.color-badge .color-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  flex-shrink: 0;
+}
+
+.color-badge.selected {
+  border-color: #6c4831;
+  background: #6c4831;
+  color: #f8efe5;
+}
+
+.product-sizes,
+.product-sizes-modal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.size-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #cbb39a;
+  background: #f7ede3;
+  font-size: 12px;
+}
+
 @media (max-width: 640px) {
   .banner {
     min-height: 180px;
