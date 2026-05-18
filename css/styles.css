@@ -318,6 +318,34 @@ select {
   font-size: 12px;
 }
 
+.product-sizes-modal button {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #cbb39a;
+  background: #f7ede3;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.product-sizes-modal button.selected {
+  border-color: #6c4831;
+  background: #6c4831;
+  color: #f8efe5;
+}
+
+.product-sizes-modal button.is-disabled,
+.product-sizes-modal button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+
+.size-hint {
+  margin: 0;
+  font-size: 13px;
+  color: #7b706b;
+}
+
 @media (max-width: 640px) {
   .banner {
     min-height: 180px;

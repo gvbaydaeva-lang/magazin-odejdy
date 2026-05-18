@@ -7,7 +7,8 @@ import {
   loadCategoriesForStorefront,
   loadSettings,
   colorToCss,
-  getSelectableSizes,
+  getVariantSizeLabels,
+  getAvailableSizesForColor,
   isStorefrontProduct,
 } from "./store.js";
 
@@ -45,13 +46,17 @@ function appendColorBadges(container, colors, options = {}) {
 }
 
 function appendSizeBadges(container, sizes, options = {}) {
-  const { selectable = false, selected = null } = options;
+  const { selectable = false, selected = null, disabledSizes = [] } = options;
+  const disabledSet = new Set(disabledSizes || []);
   (sizes || []).forEach((sizeLabel) => {
     const el = document.createElement(selectable ? "button" : "span");
     if (selectable) {
       el.type = "button";
       el.dataset.modalSize = sizeLabel;
-      el.className = selected === sizeLabel ? "selected" : "";
+      const isDisabled = disabledSet.has(sizeLabel);
+      el.disabled = isDisabled;
+      el.className =
+        (selected === sizeLabel ? "selected" : "") + (isDisabled ? " is-disabled" : "");
     } else {
       el.className = "size-badge";
     }
@@ -262,6 +267,14 @@ async function copyOrder() {
   }
 }
 
+function getSizeLabelsForColor(product, colorName) {
+  let labels = getVariantSizeLabels(product, colorName);
+  if (!labels.length && colorName) {
+    labels = Array.isArray(product.sizes) ? product.sizes : [];
+  }
+  return labels;
+}
+
 function openProductModal(p) {
   const modal = $("modal");
   const content = $("modalContent");
@@ -269,8 +282,8 @@ function openProductModal(p) {
   let color = null;
   const gallery = Array.isArray(p.images) && p.images.length ? p.images : [p.image];
   let activeImage = gallery[0];
-  const sizes = getSelectableSizes(p);
   const colors = Array.isArray(p.colors) ? p.colors : [];
+  if (colors.length === 1) color = colors[0];
 
   function renderModal() {
     const subLine = p.subcat
@@ -309,7 +322,32 @@ function openProductModal(p) {
 
     const sizesEl = content.querySelector("#modalSizes");
     sizesEl.className = "sizes product-sizes-modal";
-    appendSizeBadges(sizesEl, sizes, { selectable: true, selected: size });
+    sizesEl.innerHTML = "";
+    if (colors.length && !color) {
+      const hint = document.createElement("p");
+      hint.className = "size-hint";
+      hint.textContent = "Сначала выберите цвет";
+      sizesEl.appendChild(hint);
+    } else if (color) {
+      const available = getAvailableSizesForColor(p, color);
+      const sizeLabels = getSizeLabelsForColor(p, color);
+      if (!available.length) {
+        const hint = document.createElement("p");
+        hint.className = "size-hint";
+        hint.textContent = "Нет в наличии";
+        sizesEl.appendChild(hint);
+      } else {
+        const disabledSizes = sizeLabels.filter((s) => !available.includes(s));
+        appendSizeBadges(sizesEl, sizeLabels, {
+          selectable: true,
+          selected: size,
+          disabledSizes,
+        });
+      }
+    } else {
+      const fallbackSizes = Array.isArray(p.sizes) ? p.sizes : [];
+      appendSizeBadges(sizesEl, fallbackSizes, { selectable: true, selected: size });
+    }
 
     const galleryEl = content.querySelector("#modalGallery");
     gallery.forEach((imgSrc) => {
@@ -327,11 +365,13 @@ function openProductModal(p) {
     const colorBtn = target.closest("[data-modal-color]");
     if (colorBtn) {
       color = colorBtn.dataset.modalColor;
+      size = null;
       renderModal();
       return;
     }
     const sizeBtn = target.closest("[data-modal-size]");
     if (sizeBtn) {
+      if (sizeBtn.disabled) return;
       size = sizeBtn.dataset.modalSize;
       renderModal();
       return;
@@ -352,13 +392,30 @@ function openProductModal(p) {
       return;
     }
     if (target.dataset.action === "add") {
-      if (sizes.length && !size) {
-        alert("Выберите размер");
-        return;
-      }
       if (colors.length && !color) {
         alert("Выберите цвет");
         return;
+      }
+      if (color) {
+        const available = getAvailableSizesForColor(p, color);
+        if (!available.length) {
+          alert("Нет в наличии");
+          return;
+        }
+        if (!size) {
+          alert("Выберите размер");
+          return;
+        }
+        if (!available.includes(size)) {
+          alert("Этот размер недоступен");
+          return;
+        }
+      } else {
+        const fallbackSizes = Array.isArray(p.sizes) ? p.sizes : [];
+        if (fallbackSizes.length && !size) {
+          alert("Выберите размер");
+          return;
+        }
       }
       cart.push({ ...p, size, color });
       renderCart();

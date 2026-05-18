@@ -93,7 +93,7 @@
     productFormOpen: false,
     productDraftMedia: { image: null, video: null, imageName: "", videoName: "" },
     productFormCustomColors: [],
-    productFormDraftStock: {},
+    productFormDraftVariants: {},
     lastEditingProductId: undefined,
   };
 
@@ -628,13 +628,13 @@
     state.lastEditingProductId = key;
     state.productDraftMedia = { image: null, video: null, imageName: "", videoName: "" };
     state.productFormCustomColors = [];
-    state.productFormDraftStock = {};
+    state.productFormDraftVariants = {};
     if (!state.editingProductId) return;
     var editing = state.products.find(function (p) {
       return p.id === state.editingProductId;
     });
     if (!editing) return;
-    state.productFormDraftStock = Object.assign({}, editing.stock || {});
+    state.productFormDraftVariants = variantsToDraftMap(editing.variants || []);
     var presetLower = {};
     PRESET_COLORS.forEach(function (c) {
       presetLower[c.toLowerCase()] = true;
@@ -787,33 +787,53 @@
     state.productFormOpen = false;
     state.editingProductId = null;
     state.lastEditingProductId = undefined;
-    state.productFormDraftStock = {};
+    state.productFormDraftVariants = {};
   }
 
   function openProductFormForNew() {
     state.productFormOpen = true;
     state.editingProductId = null;
     state.lastEditingProductId = undefined;
-    state.productFormDraftStock = {};
+    state.productFormDraftVariants = {};
     state.productFormCustomColors = [];
     state.productDraftMedia = { image: null, video: null, imageName: "", videoName: "" };
   }
 
+  function variantsToDraftMap(variants) {
+    var map = {};
+    (variants || []).forEach(function (v) {
+      if (!v || !v.color) return;
+      map[v.color] = {
+        selectedSizes: Object.keys(v.sizes || {}),
+        sizes: Object.assign({}, v.sizes || {}),
+      };
+    });
+    return map;
+  }
+
+  function getActiveColorsForForm(editing) {
+    var draftKeys = Object.keys(state.productFormDraftVariants || {});
+    if (draftKeys.length) return draftKeys;
+    if (editing && editing.colors && editing.colors.length) return editing.colors.slice();
+    return [];
+  }
+
   function renderStockTableCell(product) {
-    var sizes = product.sizes || [];
-    var stock = product.stock || {};
-    if (!sizes.length) {
+    var variants = product.variants || [];
+    if (!variants.length) {
       return '<span class="stock-cell-muted">—</span>';
     }
-    var lines = sizes
-      .map(function (size) {
-        if (stock[size] === undefined) return null;
+    var lines = variants
+      .map(function (v) {
+        var sizeKeys = Object.keys(v.sizes || {});
+        if (!sizeKeys.length) return null;
+        var parts = sizeKeys
+          .map(function (size) {
+            return escapeHtml(size) + ": " + escapeHtml(String(v.sizes[size]));
+          })
+          .join(", ");
         return (
-          '<span class="stock-line"><b>' +
-          escapeHtml(size) +
-          ":</b> " +
-          escapeHtml(String(stock[size])) +
-          "</span>"
+          '<span class="stock-variant-line"><b>' + escapeHtml(v.color) + ":</b> " + parts + "</span>"
         );
       })
       .filter(Boolean);
@@ -823,26 +843,30 @@
     return '<div class="stock-cell">' + lines.join("") + "</div>";
   }
 
-  function buildStockFieldsHtml(sizes, stock) {
-    if (!sizes.length) {
-      return '<p class="stub-text">Сначала выберите размеры выше.</p>';
+  function buildVariantStockFieldsHtml(color, selectedSizes, sizesMap) {
+    if (!selectedSizes.length) {
+      return '<p class="stub-text">Выберите размеры для этого цвета.</p>';
     }
-    var stockMap = stock && typeof stock === "object" ? stock : {};
+    var stockMap = sizesMap && typeof sizesMap === "object" ? sizesMap : {};
     return (
       '<div class="stock-fields-grid">' +
-      sizes
+      selectedSizes
         .map(function (size) {
           var val = stockMap[size] !== undefined ? String(stockMap[size]) : "";
+          var inputId =
+            "stock_" + encodeURIComponent(color).replace(/%/g, "_") + "_" + escapeHtml(size);
           return (
             '<div class="field stock-field">' +
-            '<label class="label" for="stock_' +
-            escapeHtml(size) +
+            '<label class="label" for="' +
+            inputId +
             '">Остаток ' +
             escapeHtml(size) +
             "</label>" +
-            '<input class="input product-stock-input" id="stock_' +
-            escapeHtml(size) +
-            '" type="number" min="0" step="1" data-stock-size="' +
+            '<input class="input variant-stock-input" id="' +
+            inputId +
+            '" type="number" min="0" step="1" data-variant-color="' +
+            escapeHtml(color) +
+            '" data-stock-size="' +
             escapeHtml(size) +
             '" value="' +
             escapeHtml(val) +
@@ -853,6 +877,42 @@
         .join("") +
       "</div>"
     );
+  }
+
+  function buildVariantBlockHtml(color, entry) {
+    var draftEntry = entry || { selectedSizes: [], sizes: {} };
+    var selectedSizes = draftEntry.selectedSizes || [];
+    var bg = colorToCss(color);
+    return (
+      '<div class="variant-block" data-variant-color="' +
+      escapeHtml(color) +
+      '">' +
+      '<h4 class="variant-color-title"><span class="picker-swatch" style="background:' +
+      escapeHtml(bg) +
+      '"></span>' +
+      escapeHtml(color) +
+      "</h4>" +
+      '<p class="stub-text variant-hint">Размеры для этого цвета</p>' +
+      '<div class="picker-group variant-sizes-picker" data-variant-color="' +
+      escapeHtml(color) +
+      '">' +
+      buildSizePickerHtml(selectedSizes) +
+      "</div>" +
+      '<div class="variant-stock-wrap">' +
+      buildVariantStockFieldsHtml(color, selectedSizes, draftEntry.sizes || {}) +
+      "</div></div>"
+    );
+  }
+
+  function buildVariantFieldsHtml(colors, draftMap) {
+    if (!colors.length) {
+      return '<p class="stub-text">Сначала выберите цвета выше.</p>';
+    }
+    return colors
+      .map(function (color) {
+        return buildVariantBlockHtml(color, draftMap[color]);
+      })
+      .join("");
   }
 
   function readFileAsDataURL(file, maxBytes, done) {
@@ -899,12 +959,12 @@
         : "";
     var previewImage = getPreviewImageSrc(editing);
     var previewVideo = getPreviewVideoSrc(editing);
-    var selectedSizes = editing ? editing.sizes || [] : [];
-    var selectedColors = editing ? editing.colors || [] : [];
+    var activeColors = getActiveColorsForForm(editing);
+    var selectedColors = activeColors;
     var imageHint = state.productDraftMedia.imageName || (previewImage ? "Фото загружено" : "");
     var videoHint =
       state.productDraftMedia.videoName || (previewVideo ? "Видео загружено" : "Видео не выбрано");
-    var stockForForm = editing ? editing.stock || {} : state.productFormDraftStock || {};
+    var variantsForForm = state.productFormDraftVariants || {};
 
     var rows = state.products
       .map(function (p) {
@@ -995,14 +1055,6 @@
               '"></video>'
             : "") +
           "</div>" +
-          '<div class="field field-span-2"><label class="label">Размеры</label>' +
-          '<div class="picker-group" id="productSizesPicker">' +
-          buildSizePickerHtml(editing ? editing.sizes || [] : []) +
-          "</div></div>" +
-          '<div class="field field-span-2"><label class="label">Остатки по размерам</label>' +
-          '<div id="productStockFields">' +
-          buildStockFieldsHtml(editing ? editing.sizes || [] : [], stockForForm) +
-          "</div></div>" +
           '<div class="field field-span-2"><label class="label">Цвета</label>' +
           '<div class="picker-group" id="productColorsPicker">' +
           buildColorPickerHtml(selectedColors, state.productFormCustomColors) +
@@ -1010,6 +1062,10 @@
           '<div class="inline-form custom-color-form">' +
           '<input class="input" id="productCustomColorInput" type="text" placeholder="Добавить свой цвет" />' +
           '<button type="button" class="btn btn-ghost" id="productAddCustomColorBtn">Добавить</button>' +
+          "</div></div>" +
+          '<div class="field field-span-2"><label class="label">Остатки по цветам и размерам</label>' +
+          '<div id="productVariantFields">' +
+          buildVariantFieldsHtml(activeColors, variantsForForm) +
           "</div></div>" +
           '<div class="btn-row">' +
           '<button type="button" id="saveProductBtn" class="btn btn-primary">' +
@@ -1307,6 +1363,7 @@
         }
         var del = event.target.closest("[data-delete-product-id]");
         if (!del) return;
+        if (!window.confirm("Удалить товар?")) return;
         var id = del.dataset.deleteProductId;
         if (state.editingProductId === id) closeProductForm();
         state.products = state.products.filter(function (p) {
@@ -1364,13 +1421,6 @@
       });
     }
 
-    function collectSelectedSizes() {
-      var nodes = document.querySelectorAll("#productSizesPicker .picker-btn.is-active");
-      return Array.prototype.map.call(nodes, function (btn) {
-        return btn.dataset.sizeOption;
-      });
-    }
-
     function collectSelectedColors() {
       var nodes = document.querySelectorAll("#productColorsPicker .picker-btn.is-active");
       return Array.prototype.map.call(nodes, function (btn) {
@@ -1378,35 +1428,62 @@
       });
     }
 
-    function mergeStockFromDom() {
-      var stock = {};
-      document.querySelectorAll("#productStockFields .product-stock-input").forEach(function (inp) {
-        var size = inp.dataset.stockSize;
-        if (!size) return;
-        var raw = inp.value.trim();
-        if (raw === "") return;
-        var n = Number(raw);
-        if (Number.isFinite(n) && n >= 0) stock[size] = Math.floor(n);
+    function mergeVariantsFromDom() {
+      var map = state.productFormDraftVariants || {};
+      document.querySelectorAll(".variant-block").forEach(function (block) {
+        var color = block.dataset.variantColor;
+        if (!color) return;
+        var entry = map[color] || { selectedSizes: [], sizes: {} };
+        var selectedSizes = [];
+        block.querySelectorAll(".variant-sizes-picker .picker-btn.is-active").forEach(function (btn) {
+          selectedSizes.push(btn.dataset.sizeOption);
+        });
+        var sizes = Object.assign({}, entry.sizes || {});
+        block.querySelectorAll(".variant-stock-input").forEach(function (inp) {
+          var size = inp.dataset.stockSize;
+          if (!size) return;
+          var raw = inp.value.trim();
+          if (raw === "") {
+            delete sizes[size];
+            return;
+          }
+          var n = Number(raw);
+          if (Number.isFinite(n) && n >= 0) sizes[size] = Math.floor(n);
+        });
+        entry.selectedSizes = selectedSizes;
+        entry.sizes = sizes;
+        map[color] = entry;
       });
-      state.productFormDraftStock = stock;
+      state.productFormDraftVariants = map;
     }
 
-    function refreshProductStockFields() {
-      var wrap = document.getElementById("productStockFields");
+    function refreshProductVariantFields() {
+      mergeVariantsFromDom();
+      var selected = collectSelectedColors();
+      var map = state.productFormDraftVariants || {};
+      Object.keys(map).forEach(function (c) {
+        if (selected.indexOf(c) === -1) delete map[c];
+      });
+      selected.forEach(function (c) {
+        if (!map[c]) map[c] = { selectedSizes: [], sizes: {} };
+      });
+      state.productFormDraftVariants = map;
+      var wrap = document.getElementById("productVariantFields");
       if (!wrap) return;
-      var sizes = collectSelectedSizes();
-      wrap.innerHTML = buildStockFieldsHtml(sizes, state.productFormDraftStock || {});
+      wrap.innerHTML = buildVariantFieldsHtml(selected, map);
     }
 
-    function collectStockFromForm(activeSizes) {
-      mergeStockFromDom();
-      var stock = {};
-      activeSizes.forEach(function (size) {
-        if (state.productFormDraftStock[size] !== undefined) {
-          stock[size] = state.productFormDraftStock[size];
-        }
+    function collectVariantsFromForm() {
+      mergeVariantsFromDom();
+      var colors = collectSelectedColors();
+      return colors.map(function (color) {
+        var entry = state.productFormDraftVariants[color] || { selectedSizes: [], sizes: {} };
+        var sizes = {};
+        (entry.selectedSizes || []).forEach(function (size) {
+          if (entry.sizes[size] !== undefined) sizes[size] = entry.sizes[size];
+        });
+        return { color: color, sizes: sizes };
       });
-      return stock;
     }
 
     function wirePickerToggle(containerId, onToggle) {
@@ -1420,8 +1497,33 @@
       });
     }
 
-    wirePickerToggle("productSizesPicker", refreshProductStockFields);
-    wirePickerToggle("productColorsPicker");
+    wirePickerToggle("productColorsPicker", refreshProductVariantFields);
+
+    var variantFields = document.getElementById("productVariantFields");
+    if (variantFields && !variantFields.dataset.bound) {
+      variantFields.dataset.bound = "1";
+      variantFields.addEventListener("click", function (event) {
+        var btn = event.target.closest(".variant-sizes-picker .picker-btn");
+        if (!btn) return;
+        btn.classList.toggle("is-active");
+        mergeVariantsFromDom();
+        var block = btn.closest(".variant-block");
+        if (!block) return;
+        var color = block.dataset.variantColor;
+        if (!color) return;
+        var entry = state.productFormDraftVariants[color] || { selectedSizes: [], sizes: {} };
+        var selectedSizes = [];
+        block.querySelectorAll(".variant-sizes-picker .picker-btn.is-active").forEach(function (b) {
+          selectedSizes.push(b.dataset.sizeOption);
+        });
+        entry.selectedSizes = selectedSizes;
+        state.productFormDraftVariants[color] = entry;
+        var stockWrap = block.querySelector(".variant-stock-wrap");
+        if (stockWrap) {
+          stockWrap.innerHTML = buildVariantStockFieldsHtml(color, selectedSizes, entry.sizes || {});
+        }
+      });
+    }
 
     var imageFileInput = document.getElementById("productImageFile");
     var videoFileInput = document.getElementById("productVideoFile");
@@ -1513,6 +1615,7 @@
               btn.classList.add("is-active");
             }
           });
+          refreshProductVariantFields();
         }, 0);
       });
     }
@@ -1527,8 +1630,7 @@
       var images = resolveProductImages(editing);
       var video = resolveProductVideo(editing);
       var colors = collectSelectedColors();
-      var sizes = collectSelectedSizes();
-      var stock = collectStockFromForm(sizes);
+      var variants = collectVariantsFromForm();
 
       if (!name) {
         showSectionMessage("productsMessage", "msg-error", "Введите название товара");
@@ -1554,8 +1656,7 @@
         image: images[0] || "",
         video: video,
         colors: colors,
-        sizes: sizes,
-        stock: stock,
+        variants: variants,
       };
 
       if (state.editingProductId) {

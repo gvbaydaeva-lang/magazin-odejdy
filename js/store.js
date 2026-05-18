@@ -87,35 +87,102 @@ export function isStorefrontProduct(product) {
   return product.published === true && images.length > 0;
 }
 
-export function normalizeStock(raw, sizes = []) {
-  const stock = {};
+export function normalizeVariantSizes(raw) {
+  const sizes = {};
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
     Object.keys(raw).forEach((key) => {
       const n = Number(raw[key]);
-      if (Number.isFinite(n) && n >= 0) stock[String(key)] = Math.floor(n);
+      if (Number.isFinite(n) && n >= 0) sizes[String(key)] = Math.floor(n);
     });
   }
-  if (!Array.isArray(sizes) || !sizes.length) return stock;
-  const pruned = {};
-  sizes.forEach((size) => {
-    if (stock[size] !== undefined) pruned[size] = stock[size];
-  });
-  return pruned;
+  return sizes;
 }
 
-/** Размеры, доступные для заказа на витрине (остаток > 0 или остатки не заданы). */
-export function getSelectableSizes(product) {
-  const sizes = Array.isArray(product?.sizes) ? product.sizes : [];
-  const stock =
-    product?.stock && typeof product.stock === "object" && !Array.isArray(product.stock)
-      ? product.stock
-      : {};
-  const hasStockData = sizes.some((s) => stock[s] !== undefined);
-  if (!hasStockData) return sizes;
-  return sizes.filter((s) => {
-    const qty = stock[s];
-    return qty !== undefined && qty > 0;
+export function normalizeVariant(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const color = String(raw.color || "").trim();
+  if (!color) return null;
+  const sizeKeys = Array.isArray(raw.sizeList)
+    ? raw.sizeList.map((s) => String(s).trim()).filter(Boolean)
+    : Object.keys(normalizeVariantSizes(raw.sizes));
+  const sizes = normalizeVariantSizes(raw.sizes);
+  const pruned = {};
+  sizeKeys.forEach((size) => {
+    if (sizes[size] !== undefined) pruned[size] = sizes[size];
   });
+  return { color, sizes: pruned };
+}
+
+export function migrateLegacyToVariants(colors, sizes, stock) {
+  const colorList = Array.isArray(colors) ? colors.filter(Boolean) : [];
+  const sizeList = Array.isArray(sizes) ? sizes.filter(Boolean) : [];
+  const stockMap = normalizeVariantSizes(stock);
+  if (!colorList.length && !sizeList.length && !Object.keys(stockMap).length) {
+    return [];
+  }
+  if (!colorList.length) {
+    return [{ color: "Без цвета", sizes: { ...stockMap } }];
+  }
+  return colorList.map((color) => {
+    const variantSizes = {};
+    const keys = sizeList.length ? sizeList : Object.keys(stockMap);
+    keys.forEach((size) => {
+      if (stockMap[size] !== undefined) variantSizes[size] = stockMap[size];
+    });
+    return { color, sizes: variantSizes };
+  });
+}
+
+export function normalizeVariants(raw, colors = [], sizes = [], stock = {}) {
+  if (Array.isArray(raw) && raw.length) {
+    return raw.map(normalizeVariant).filter(Boolean);
+  }
+  return migrateLegacyToVariants(colors, sizes, stock);
+}
+
+export function deriveColorsFromVariants(variants) {
+  return (variants || []).map((v) => v.color).filter(Boolean);
+}
+
+export function deriveSizesFromVariants(variants) {
+  const set = new Set();
+  (variants || []).forEach((v) => {
+    Object.keys(v.sizes || {}).forEach((s) => set.add(s));
+  });
+  return Array.from(set);
+}
+
+export function getVariantByColor(product, colorName) {
+  const name = String(colorName || "").trim();
+  if (!product || !Array.isArray(product.variants)) return null;
+  return product.variants.find((v) => v.color === name) || null;
+}
+
+/** Все размеры варианта (ключи sizes), в т.ч. с нулевым остатком. */
+export function getVariantSizeLabels(product, colorName) {
+  const variant = getVariantByColor(product, colorName);
+  if (!variant) return [];
+  return Object.keys(variant.sizes || {});
+}
+
+/** Размеры с остатком > 0 для выбранного цвета. */
+export function getAvailableSizesForColor(product, colorName) {
+  const variant = getVariantByColor(product, colorName);
+  if (!variant) return [];
+  const entries = Object.entries(variant.sizes || {});
+  if (!entries.length) return Array.isArray(product.sizes) ? product.sizes : [];
+  return entries.filter(([, qty]) => qty > 0).map(([size]) => size);
+}
+
+export function hasAvailableStockForColor(product, colorName) {
+  return getAvailableSizesForColor(product, colorName).length > 0;
+}
+
+/** @deprecated используйте getAvailableSizesForColor */
+export function getSelectableSizes(product) {
+  const colors = deriveColorsFromVariants(product?.variants);
+  if (colors.length) return getAvailableSizesForColor(product, colors[0]);
+  return Array.isArray(product?.sizes) ? product.sizes : [];
 }
 
 export function normalizeCategory(raw) {
@@ -211,7 +278,9 @@ export function normalizeProduct(raw) {
         ? [image]
         : [];
   const published = images.length > 0;
-  const stock = normalizeStock(raw.stock, sizes);
+  const variants = normalizeVariants(raw.variants, colors, sizes, raw.stock);
+  const derivedColors = deriveColorsFromVariants(variants);
+  const derivedSizes = deriveSizesFromVariants(variants);
   const id = raw.id ? String(raw.id) : stableId();
   return {
     id,
@@ -223,9 +292,9 @@ export function normalizeProduct(raw) {
     image: images[0] || "",
     images,
     video,
-    colors,
-    sizes,
-    stock,
+    colors: derivedColors.length ? derivedColors : colors,
+    sizes: derivedSizes.length ? derivedSizes : sizes,
+    variants,
     published,
   };
 }

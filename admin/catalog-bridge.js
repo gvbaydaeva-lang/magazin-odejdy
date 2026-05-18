@@ -93,37 +93,97 @@
     return product.published === true && images.length > 0;
   }
 
-  function normalizeStock(raw, sizes) {
-    var stock = {};
-    var sizeList = Array.isArray(sizes) ? sizes : [];
+  function normalizeVariantSizes(raw) {
+    var sizes = {};
     if (raw && typeof raw === "object" && !Array.isArray(raw)) {
       Object.keys(raw).forEach(function (key) {
         var n = Number(raw[key]);
-        if (Number.isFinite(n) && n >= 0) stock[String(key)] = Math.floor(n);
+        if (Number.isFinite(n) && n >= 0) sizes[String(key)] = Math.floor(n);
       });
     }
-    if (!sizeList.length) return stock;
-    var pruned = {};
-    sizeList.forEach(function (size) {
-      if (stock[size] !== undefined) pruned[size] = stock[size];
+    return sizes;
+  }
+
+  function normalizeVariant(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    var color = String(raw.color || "").trim();
+    if (!color) return null;
+    var sizes = normalizeVariantSizes(raw.sizes);
+    return { color: color, sizes: sizes };
+  }
+
+  function migrateLegacyToVariants(colors, sizes, stock) {
+    var colorList = Array.isArray(colors) ? colors.filter(Boolean) : [];
+    var sizeList = Array.isArray(sizes) ? sizes.filter(Boolean) : [];
+    var stockMap = normalizeVariantSizes(stock);
+    if (!colorList.length && !sizeList.length && !Object.keys(stockMap).length) return [];
+    if (!colorList.length) return [{ color: "Без цвета", sizes: stockMap }];
+    return colorList.map(function (color) {
+      var variantSizes = {};
+      var keys = sizeList.length ? sizeList : Object.keys(stockMap);
+      keys.forEach(function (size) {
+        if (stockMap[size] !== undefined) variantSizes[size] = stockMap[size];
+      });
+      return { color: color, sizes: variantSizes };
     });
-    return pruned;
+  }
+
+  function normalizeVariants(raw, colors, sizes, stock) {
+    if (Array.isArray(raw) && raw.length) {
+      return raw.map(normalizeVariant).filter(Boolean);
+    }
+    return migrateLegacyToVariants(colors, sizes, stock);
+  }
+
+  function deriveColorsFromVariants(variants) {
+    return (variants || []).map(function (v) {
+      return v.color;
+    }).filter(Boolean);
+  }
+
+  function deriveSizesFromVariants(variants) {
+    var set = {};
+    (variants || []).forEach(function (v) {
+      Object.keys(v.sizes || {}).forEach(function (s) {
+        set[s] = true;
+      });
+    });
+    return Object.keys(set);
+  }
+
+  function getVariantByColor(product, colorName) {
+    var name = String(colorName || "").trim();
+    if (!product || !Array.isArray(product.variants)) return null;
+    for (var i = 0; i < product.variants.length; i++) {
+      if (product.variants[i].color === name) return product.variants[i];
+    }
+    return null;
+  }
+
+  function getVariantSizeLabels(product, colorName) {
+    var variant = getVariantByColor(product, colorName);
+    if (!variant) return [];
+    return Object.keys(variant.sizes || {});
+  }
+
+  function getAvailableSizesForColor(product, colorName) {
+    var variant = getVariantByColor(product, colorName);
+    if (!variant) return [];
+    var keys = Object.keys(variant.sizes || {});
+    if (!keys.length) return Array.isArray(product.sizes) ? product.sizes : [];
+    return keys.filter(function (size) {
+      return variant.sizes[size] > 0;
+    });
+  }
+
+  function hasAvailableStockForColor(product, colorName) {
+    return getAvailableSizesForColor(product, colorName).length > 0;
   }
 
   function getSelectableSizes(product) {
-    var sizes = Array.isArray(product && product.sizes) ? product.sizes : [];
-    var stock =
-      product && product.stock && typeof product.stock === "object" && !Array.isArray(product.stock)
-        ? product.stock
-        : {};
-    var hasStockData = sizes.some(function (s) {
-      return stock[s] !== undefined;
-    });
-    if (!hasStockData) return sizes;
-    return sizes.filter(function (s) {
-      var qty = stock[s];
-      return qty !== undefined && qty > 0;
-    });
+    var colors = deriveColorsFromVariants(product && product.variants);
+    if (colors.length) return getAvailableSizesForColor(product, colors[0]);
+    return Array.isArray(product && product.sizes) ? product.sizes : [];
   }
 
   function normalizeCategory(raw) {
@@ -288,7 +348,9 @@
           ? [image]
           : [];
     var published = images.length > 0;
-    var stock = normalizeStock(raw.stock, sizes);
+    var variants = normalizeVariants(raw.variants, colors, sizes, raw.stock);
+    var derivedColors = deriveColorsFromVariants(variants);
+    var derivedSizes = deriveSizesFromVariants(variants);
     var id = raw.id ? String(raw.id) : stableId();
     return {
       id: id,
@@ -300,9 +362,9 @@
       image: images[0] || "",
       images: images,
       video: video,
-      colors: colors,
-      sizes: sizes,
-      stock: stock,
+      colors: derivedColors.length ? derivedColors : colors,
+      sizes: derivedSizes.length ? derivedSizes : sizes,
+      variants: variants,
       published: published,
     };
   }
@@ -394,7 +456,11 @@
     COLOR_HEX: COLOR_HEX,
     colorToCss: colorToCss,
     isStorefrontProduct: isStorefrontProduct,
-    normalizeStock: normalizeStock,
+    normalizeVariants: normalizeVariants,
+    getVariantByColor: getVariantByColor,
+    getVariantSizeLabels: getVariantSizeLabels,
+    getAvailableSizesForColor: getAvailableSizesForColor,
+    hasAvailableStockForColor: hasAvailableStockForColor,
     getSelectableSizes: getSelectableSizes,
     normalizeCategory: normalizeCategory,
     normalizeCategoriesList: normalizeCategoriesList,
