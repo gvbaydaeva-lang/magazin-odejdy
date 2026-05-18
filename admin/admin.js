@@ -17,9 +17,10 @@
 
   var normalizeProduct = Store.normalizeProduct;
   var defaultProductSeed = Store.DEFAULT_SEED;
-  var PRODUCT_SIZE_OPTIONS = Store.PRODUCT_SIZE_OPTIONS;
   var PRESET_COLORS = Store.PRESET_COLORS;
   var colorToCss = Store.colorToCss;
+  var getProductTotalStock = Store.getProductTotalStock;
+  var getProductSizeSummary = Store.getProductSizeSummary;
   var getCategoryName = Store.getCategoryName;
   var normalizeCategoriesList = Store.normalizeCategoriesList;
   var MAX_IMAGE_BYTES = 3 * 1024 * 1024;
@@ -715,25 +716,6 @@
       .join("");
   }
 
-  function buildSizePickerHtml(selected) {
-    var set = {};
-    (selected || []).forEach(function (s) {
-      set[s] = true;
-    });
-    return PRODUCT_SIZE_OPTIONS.map(function (size) {
-      var active = set[size] ? " is-active" : "";
-      return (
-        '<button type="button" class="picker-btn picker-size' +
-        active +
-        '" data-size-option="' +
-        escapeHtml(size) +
-        '">' +
-        escapeHtml(size) +
-        "</button>"
-      );
-    }).join("");
-  }
-
   function buildColorPickerHtml(selected, customColors) {
     var set = {};
     (selected || []).forEach(function (c) {
@@ -803,10 +785,17 @@
     var map = {};
     (variants || []).forEach(function (v) {
       if (!v || !v.color) return;
-      map[v.color] = {
-        selectedSizes: Object.keys(v.sizes || {}),
-        sizes: Object.assign({}, v.sizes || {}),
-      };
+      var rows = [];
+      if (Array.isArray(v.sizes)) {
+        rows = v.sizes.map(function (e) {
+          return { size: e.size || "", stock: e.stock != null ? e.stock : 0 };
+        });
+      } else if (v.sizes && typeof v.sizes === "object") {
+        rows = Object.keys(v.sizes).map(function (size) {
+          return { size: size, stock: v.sizes[size] };
+        });
+      }
+      map[v.color] = { rows: rows };
     });
     return map;
   }
@@ -818,103 +807,210 @@
     return [];
   }
 
-  function renderStockTableCell(product) {
-    var variants = product.variants || [];
-    if (!variants.length) {
-      return '<span class="stock-cell-muted">—</span>';
-    }
-    var lines = variants
-      .map(function (v) {
-        var sizeKeys = Object.keys(v.sizes || {});
-        if (!sizeKeys.length) return null;
-        var parts = sizeKeys
-          .map(function (size) {
-            return escapeHtml(size) + ": " + escapeHtml(String(v.sizes[size]));
-          })
-          .join(", ");
+  function renderColorsCountCell(product) {
+    var colors = product.colors || [];
+    if (!colors.length) return '<span class="table-muted">—</span>';
+    var swatches = colors
+      .slice(0, 4)
+      .map(function (c) {
         return (
-          '<span class="stock-variant-line"><b>' + escapeHtml(v.color) + ":</b> " + parts + "</span>"
+          '<span class="table-color-dot" style="background:' +
+          escapeHtml(colorToCss(c)) +
+          '" title="' +
+          escapeHtml(c) +
+          '"></span>'
         );
       })
-      .filter(Boolean);
-    if (!lines.length) {
-      return '<span class="stock-cell-muted">Не указаны</span>';
-    }
-    return '<div class="stock-cell">' + lines.join("") + "</div>";
+      .join("");
+    var label =
+      colors.length === 1 ? "1 цвет" : colors.length + " " + (colors.length < 5 ? "цвета" : "цветов");
+    return (
+      '<div class="table-colors-cell">' +
+      swatches +
+      '<span class="table-colors-label">' +
+      escapeHtml(label) +
+      "</span></div>"
+    );
   }
 
-  function buildVariantStockFieldsHtml(color, selectedSizes, sizesMap) {
-    if (!selectedSizes.length) {
-      return '<p class="stub-text">Выберите размеры для этого цвета.</p>';
-    }
-    var stockMap = sizesMap && typeof sizesMap === "object" ? sizesMap : {};
+  function renderSizesSummaryCell(product) {
+    var summary = getProductSizeSummary(product);
+    if (!summary.count) return '<span class="table-muted">—</span>';
+    return '<span class="table-sizes-summary">' + escapeHtml(summary.text) + "</span>";
+  }
+
+  function renderTotalStockCell(product) {
+    var total = getProductTotalStock(product);
+    if (!total) return '<span class="table-muted">0 шт</span>';
+    return '<span class="table-stock-total">' + escapeHtml(String(total)) + " шт</span>";
+  }
+
+  function buildVariantSizeRowHtml(color, row, rowIndex) {
+    var sizeVal = row && row.size != null ? String(row.size) : "";
+    var stockVal = row && row.stock != null ? String(row.stock) : "";
     return (
-      '<div class="stock-fields-grid">' +
-      selectedSizes
-        .map(function (size) {
-          var val = stockMap[size] !== undefined ? String(stockMap[size]) : "";
-          var inputId =
-            "stock_" + encodeURIComponent(color).replace(/%/g, "_") + "_" + escapeHtml(size);
-          return (
-            '<div class="field stock-field">' +
-            '<label class="label" for="' +
-            inputId +
-            '">Остаток ' +
-            escapeHtml(size) +
-            "</label>" +
-            '<input class="input variant-stock-input" id="' +
-            inputId +
-            '" type="number" min="0" step="1" data-variant-color="' +
-            escapeHtml(color) +
-            '" data-stock-size="' +
-            escapeHtml(size) +
-            '" value="' +
-            escapeHtml(val) +
-            '" placeholder="0" />' +
-            "</div>"
-          );
+      '<tr class="variant-size-row" data-row-index="' +
+      rowIndex +
+      '">' +
+      '<td><input class="input input-sm variant-size-input" type="text" data-variant-color="' +
+      escapeHtml(color) +
+      '" value="' +
+      escapeHtml(sizeVal) +
+      '" placeholder="42, S, One Size" /></td>' +
+      '<td><input class="input input-sm variant-stock-input" type="number" min="0" step="1" data-variant-color="' +
+      escapeHtml(color) +
+      '" value="' +
+      escapeHtml(stockVal) +
+      '" placeholder="0" /></td>' +
+      '<td class="variant-row-actions">' +
+      '<button type="button" class="btn btn-ghost btn-sm variant-remove-row" data-variant-color="' +
+      escapeHtml(color) +
+      '" title="Удалить размер">×</button>' +
+      "</td></tr>"
+    );
+  }
+
+  function buildVariantBlockHtml(color, entry) {
+    var draftEntry = entry || { rows: [] };
+    var rows = draftEntry.rows && draftEntry.rows.length ? draftEntry.rows : [];
+    var bg = colorToCss(color);
+    var rowsHtml = rows.length
+      ? rows
+          .map(function (row, idx) {
+            return buildVariantSizeRowHtml(color, row, idx);
+          })
+          .join("")
+      : "";
+    return (
+      '<div class="variant-card" data-variant-color="' +
+      escapeHtml(color) +
+      '">' +
+      '<div class="variant-card-head">' +
+      '<h4 class="variant-color-title"><span class="picker-swatch" style="background:' +
+      escapeHtml(bg) +
+      '"></span>' +
+      escapeHtml(color) +
+      "</h4></div>" +
+      '<table class="variant-size-table">' +
+      "<thead><tr><th>Размер</th><th>Остаток</th><th></th></tr></thead>" +
+      "<tbody>" +
+      rowsHtml +
+      "</tbody></table>" +
+      '<button type="button" class="btn btn-ghost btn-sm variant-add-size" data-variant-color="' +
+      escapeHtml(color) +
+      '">+ Добавить размер</button>' +
+      "</div>"
+    );
+  }
+
+  function buildVariantFieldsHtml(colors, draftMap) {
+    if (!colors.length) {
+      return '<p class="variants-empty-hint">Выберите цвета выше — для каждого появится карточка варианта.</p>';
+    }
+    return (
+      '<div class="variants-cards">' +
+      colors
+        .map(function (color) {
+          return buildVariantBlockHtml(color, draftMap[color]);
         })
         .join("") +
       "</div>"
     );
   }
 
-  function buildVariantBlockHtml(color, entry) {
-    var draftEntry = entry || { selectedSizes: [], sizes: {} };
-    var selectedSizes = draftEntry.selectedSizes || [];
-    var bg = colorToCss(color);
+  function buildProductDetailModalBody(product) {
+    if (!product) return "";
+    var status = product.published
+      ? '<span class="badge badge-success">На витрине</span>'
+      : '<span class="badge badge-warn">Не на витрине</span>';
+    var img =
+      product.images && product.images[0]
+        ? '<img class="detail-modal-image" src="' + escapeHtml(product.images[0]) + '" alt="" />'
+        : '<div class="detail-modal-image detail-modal-image-empty">Нет фото</div>';
+    var video = product.video
+      ? '<video class="detail-modal-video" controls playsinline src="' + escapeHtml(product.video) + '"></video>'
+      : "";
+    var variantsHtml = (product.variants || [])
+      .map(function (v) {
+        var rows = (v.sizes || [])
+          .map(function (e) {
+            var stockClass = e.stock > 0 ? "" : " is-zero";
+            return (
+              "<tr><td>" +
+              escapeHtml(e.size) +
+              '</td><td class="detail-stock' +
+              stockClass +
+              '">' +
+              escapeHtml(String(e.stock)) +
+              " шт</td></tr>"
+            );
+          })
+          .join("");
+        if (!rows) rows = '<tr><td colspan="2" class="table-muted">Размеры не указаны</td></tr>';
+        return (
+          '<div class="detail-variant-block">' +
+          '<h4 class="detail-variant-title"><span class="picker-swatch" style="background:' +
+          escapeHtml(colorToCss(v.color)) +
+          '"></span>' +
+          escapeHtml(v.color) +
+          "</h4>" +
+          '<table class="detail-variant-table"><thead><tr><th>Размер</th><th>Остаток</th></tr></thead><tbody>' +
+          rows +
+          "</tbody></table></div>"
+        );
+      })
+      .join("");
+    if (!variantsHtml) variantsHtml = '<p class="table-muted">Варианты не заданы</p>';
     return (
-      '<div class="variant-block" data-variant-color="' +
-      escapeHtml(color) +
-      '">' +
-      '<h4 class="variant-color-title"><span class="picker-swatch" style="background:' +
-      escapeHtml(bg) +
-      '"></span>' +
-      escapeHtml(color) +
-      "</h4>" +
-      '<p class="stub-text variant-hint">Размеры для этого цвета</p>' +
-      '<div class="picker-group variant-sizes-picker" data-variant-color="' +
-      escapeHtml(color) +
-      '">' +
-      buildSizePickerHtml(selectedSizes) +
+      '<div class="detail-modal-layout">' +
+      '<div class="detail-modal-media">' +
+      img +
+      video +
       "</div>" +
-      '<div class="variant-stock-wrap">' +
-      buildVariantStockFieldsHtml(color, selectedSizes, draftEntry.sizes || {}) +
-      "</div></div>"
+      '<div class="detail-modal-info">' +
+      "<h3>" +
+      escapeHtml(product.name) +
+      "</h3>" +
+      '<p class="detail-meta">' +
+      escapeHtml(product.cat) +
+      (product.subcat ? " · " + escapeHtml(product.subcat) : "") +
+      "</p>" +
+      '<p class="detail-price">' +
+      escapeHtml(String(product.price)) +
+      " ₽</p>" +
+      '<p class="detail-desc">' +
+      escapeHtml(product.desc || "—") +
+      "</p>" +
+      '<p class="detail-status">' +
+      status +
+      "</p>" +
+      '<p class="detail-summary">Всего на складе: <b>' +
+      escapeHtml(String(getProductTotalStock(product))) +
+      " шт</b></p>" +
+      '<div class="detail-variants">' +
+      variantsHtml +
+      "</div></div></div>"
     );
   }
 
-  function buildVariantFieldsHtml(colors, draftMap) {
-    if (!colors.length) {
-      return '<p class="stub-text">Сначала выберите цвета выше.</p>';
-    }
-    return colors
-      .map(function (color) {
-        return buildVariantBlockHtml(color, draftMap[color]);
-      })
-      .join("");
+  function openProductDetailModal(productId) {
+    var product = state.products.find(function (p) {
+      return p.id === productId;
+    });
+    var modal = document.getElementById("productDetailModal");
+    var body = document.getElementById("productDetailModalBody");
+    if (!modal || !body || !product) return;
+    body.innerHTML = buildProductDetailModalBody(product);
+    modal.classList.add("is-open");
+    modal.setAttribute("aria-hidden", "false");
   }
 
+  function closeProductDetailModal() {
+    var modal = document.getElementById("productDetailModal");
+    if (!modal) return;
+    modal.classList.remove("is-open");
+    modal.setAttribute("aria-hidden", "true");
+  }
   function readFileAsDataURL(file, maxBytes, done) {
     if (!file) {
       done(new Error("Файл не выбран"));
@@ -978,19 +1074,20 @@
         return (
           "<tr>" +
           "<td>" + thumb + "</td>" +
-          "<td>" + escapeHtml(p.name) + "</td>" +
-          "<td>" + escapeHtml(p.cat) + "</td>" +
-          "<td>" + escapeHtml(p.subcat || "—") + "</td>" +
-          "<td>" + renderBadgeList(p.sizes, "badge-size") + "</td>" +
-          "<td>" + renderColorBadgesAdmin(p.colors) + "</td>" +
-          "<td>" + renderStockTableCell(p) + "</td>" +
+          "<td class=\"products-name-cell\">" + escapeHtml(p.name) + "</td>" +
+          "<td>" + renderColorsCountCell(p) + "</td>" +
+          "<td>" + renderSizesSummaryCell(p) + "</td>" +
+          "<td>" + renderTotalStockCell(p) + "</td>" +
           "<td>" + escapeHtml(String(p.price)) + " ₽</td>" +
           "<td>" + status + "</td>" +
           '<td class="products-actions-cell">' +
+          '<button type="button" class="btn btn-ghost btn-sm" data-view-product-id="' +
+          escapeHtml(p.id) +
+          '">Подробнее</button> ' +
           '<button type="button" class="btn btn-ghost btn-sm" data-edit-product-id="' +
           escapeHtml(p.id) +
           '">Редактировать</button> ' +
-          '<button type="button" class="btn btn-ghost btn-sm" data-delete-product-id="' +
+          '<button type="button" class="btn btn-ghost btn-sm btn-danger-text" data-delete-product-id="' +
           escapeHtml(p.id) +
           '">Удалить</button></td></tr>'
         );
@@ -1063,7 +1160,9 @@
           '<input class="input" id="productCustomColorInput" type="text" placeholder="Добавить свой цвет" />' +
           '<button type="button" class="btn btn-ghost" id="productAddCustomColorBtn">Добавить</button>' +
           "</div></div>" +
-          '<div class="field field-span-2"><label class="label">Остатки по цветам и размерам</label>' +
+          '<div class="field field-span-2 variants-section">' +
+          '<label class="label">Варианты товара</label>' +
+          '<p class="stub-text variants-section-hint">Для каждого цвета добавьте размеры и остатки вручную.</p>' +
           '<div id="productVariantFields">' +
           buildVariantFieldsHtml(activeColors, variantsForForm) +
           "</div></div>" +
@@ -1091,13 +1190,19 @@
       '<div class="table-wrap products-table-wrap">' +
       (state.products.length
         ? '<table class="data-table products-table"><thead><tr>' +
-          "<th>Фото</th><th>Название</th><th>Категория</th><th>Подкатегория</th>" +
-          "<th>Размеры</th><th>Цвета</th><th>Остатки</th><th>Цена</th><th>Статус</th><th>Действия</th>" +
+          "<th>Фото</th><th>Название</th><th>Цветов</th><th>Размеров</th><th>Остатков</th>" +
+          "<th>Цена</th><th>Статус</th><th>Действия</th>" +
           "</tr></thead><tbody>" +
           rows +
           "</tbody></table>"
         : '<p class="stub-text">Пока нет товаров. Нажмите «+ Добавить товар».</p>') +
       "</div>" +
+      '<div id="productDetailModal" class="admin-modal" aria-hidden="true">' +
+      '<div class="admin-modal-backdrop" data-close-product-detail></div>' +
+      '<div class="admin-modal-dialog" role="dialog" aria-modal="true">' +
+      '<button type="button" class="admin-modal-close" data-close-product-detail aria-label="Закрыть">×</button>' +
+      '<div id="productDetailModalBody" class="admin-modal-body"></div>' +
+      "</div></div>" +
       "</article>"
     );
   }
@@ -1353,6 +1458,11 @@
     if (!section.dataset.productsListBound) {
       section.dataset.productsListBound = "1";
       section.addEventListener("click", function (event) {
+        var viewBtn = event.target.closest("[data-view-product-id]");
+        if (viewBtn) {
+          openProductDetailModal(viewBtn.dataset.viewProductId);
+          return;
+        }
         var editBtn = event.target.closest("[data-edit-product-id]");
         if (editBtn) {
           state.editingProductId = editBtn.dataset.editProductId;
@@ -1430,29 +1540,22 @@
 
     function mergeVariantsFromDom() {
       var map = state.productFormDraftVariants || {};
-      document.querySelectorAll(".variant-block").forEach(function (block) {
+      document.querySelectorAll(".variant-card").forEach(function (block) {
         var color = block.dataset.variantColor;
         if (!color) return;
-        var entry = map[color] || { selectedSizes: [], sizes: {} };
-        var selectedSizes = [];
-        block.querySelectorAll(".variant-sizes-picker .picker-btn.is-active").forEach(function (btn) {
-          selectedSizes.push(btn.dataset.sizeOption);
+        var rows = [];
+        block.querySelectorAll(".variant-size-row").forEach(function (tr) {
+          var sizeInp = tr.querySelector(".variant-size-input");
+          var stockInp = tr.querySelector(".variant-stock-input");
+          if (!sizeInp) return;
+          var sizeLabel = sizeInp.value.trim();
+          if (!sizeLabel) return;
+          var raw = stockInp ? stockInp.value.trim() : "";
+          var n = raw === "" ? 0 : Number(raw);
+          var stock = Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+          rows.push({ size: sizeLabel, stock: stock });
         });
-        var sizes = Object.assign({}, entry.sizes || {});
-        block.querySelectorAll(".variant-stock-input").forEach(function (inp) {
-          var size = inp.dataset.stockSize;
-          if (!size) return;
-          var raw = inp.value.trim();
-          if (raw === "") {
-            delete sizes[size];
-            return;
-          }
-          var n = Number(raw);
-          if (Number.isFinite(n) && n >= 0) sizes[size] = Math.floor(n);
-        });
-        entry.selectedSizes = selectedSizes;
-        entry.sizes = sizes;
-        map[color] = entry;
+        map[color] = { rows: rows };
       });
       state.productFormDraftVariants = map;
     }
@@ -1465,7 +1568,7 @@
         if (selected.indexOf(c) === -1) delete map[c];
       });
       selected.forEach(function (c) {
-        if (!map[c]) map[c] = { selectedSizes: [], sizes: {} };
+        if (!map[c]) map[c] = { rows: [] };
       });
       state.productFormDraftVariants = map;
       var wrap = document.getElementById("productVariantFields");
@@ -1477,11 +1580,18 @@
       mergeVariantsFromDom();
       var colors = collectSelectedColors();
       return colors.map(function (color) {
-        var entry = state.productFormDraftVariants[color] || { selectedSizes: [], sizes: {} };
-        var sizes = {};
-        (entry.selectedSizes || []).forEach(function (size) {
-          if (entry.sizes[size] !== undefined) sizes[size] = entry.sizes[size];
-        });
+        var entry = state.productFormDraftVariants[color] || { rows: [] };
+        var sizes = (entry.rows || [])
+          .filter(function (r) {
+            return r.size && String(r.size).trim();
+          })
+          .map(function (r) {
+            var stock = Number(r.stock);
+            return {
+              size: String(r.size).trim(),
+              stock: Number.isFinite(stock) && stock >= 0 ? Math.floor(stock) : 0,
+            };
+          });
         return { color: color, sizes: sizes };
       });
     }
@@ -1503,24 +1613,46 @@
     if (variantFields && !variantFields.dataset.bound) {
       variantFields.dataset.bound = "1";
       variantFields.addEventListener("click", function (event) {
-        var btn = event.target.closest(".variant-sizes-picker .picker-btn");
-        if (!btn) return;
-        btn.classList.toggle("is-active");
-        mergeVariantsFromDom();
-        var block = btn.closest(".variant-block");
-        if (!block) return;
-        var color = block.dataset.variantColor;
-        if (!color) return;
-        var entry = state.productFormDraftVariants[color] || { selectedSizes: [], sizes: {} };
-        var selectedSizes = [];
-        block.querySelectorAll(".variant-sizes-picker .picker-btn.is-active").forEach(function (b) {
-          selectedSizes.push(b.dataset.sizeOption);
-        });
-        entry.selectedSizes = selectedSizes;
-        state.productFormDraftVariants[color] = entry;
-        var stockWrap = block.querySelector(".variant-stock-wrap");
-        if (stockWrap) {
-          stockWrap.innerHTML = buildVariantStockFieldsHtml(color, selectedSizes, entry.sizes || {});
+        var addBtn = event.target.closest(".variant-add-size");
+        if (addBtn) {
+          mergeVariantsFromDom();
+          var colorAdd = addBtn.dataset.variantColor;
+          var entryAdd = state.productFormDraftVariants[colorAdd] || { rows: [] };
+          entryAdd.rows.push({ size: "", stock: 0 });
+          state.productFormDraftVariants[colorAdd] = entryAdd;
+          refreshProductVariantFields();
+          return;
+        }
+        var removeBtn = event.target.closest(".variant-remove-row");
+        if (removeBtn) {
+          mergeVariantsFromDom();
+          var colorRem = removeBtn.dataset.variantColor;
+          var block = removeBtn.closest(".variant-card");
+          var row = removeBtn.closest(".variant-size-row");
+          if (!block || !row || !colorRem) return;
+          var entryRem = state.productFormDraftVariants[colorRem] || { rows: [] };
+          var rowsDom = block.querySelectorAll(".variant-size-row");
+          for (var i = 0; i < rowsDom.length; i++) {
+            if (rowsDom[i] === row) {
+              entryRem.rows.splice(i, 1);
+              break;
+            }
+          }
+          state.productFormDraftVariants[colorRem] = entryRem;
+          refreshProductVariantFields();
+        }
+      });
+    }
+
+    var detailModal = document.getElementById("productDetailModal");
+    if (detailModal && !detailModal.dataset.bound) {
+      detailModal.dataset.bound = "1";
+      detailModal.addEventListener("click", function (event) {
+        if (event.target.closest("[data-close-product-detail]")) closeProductDetailModal();
+      });
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && detailModal.classList.contains("is-open")) {
+          closeProductDetailModal();
         }
       });
     }

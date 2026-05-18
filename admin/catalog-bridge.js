@@ -93,38 +93,69 @@
     return product.published === true && images.length > 0;
   }
 
-  function normalizeVariantSizes(raw) {
-    var sizes = {};
-    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-      Object.keys(raw).forEach(function (key) {
-        var n = Number(raw[key]);
-        if (Number.isFinite(n) && n >= 0) sizes[String(key)] = Math.floor(n);
+  function normalizeSizeEntry(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    var size = String(raw.size || raw.label || "").trim();
+    if (!size) return null;
+    var qty = Number(raw.stock != null ? raw.stock : raw.qty != null ? raw.qty : 0);
+    var stock = Number.isFinite(qty) && qty >= 0 ? Math.floor(qty) : 0;
+    return { size: size, stock: stock };
+  }
+
+  function sizesObjectToArray(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+    return Object.keys(raw)
+      .map(function (key) {
+        return normalizeSizeEntry({ size: key, stock: raw[key] });
+      })
+      .filter(Boolean);
+  }
+
+  function normalizeVariantSizesList(raw) {
+    if (Array.isArray(raw)) {
+      var list = [];
+      var seen = {};
+      raw.forEach(function (item) {
+        var entry = normalizeSizeEntry(item);
+        if (!entry || seen[entry.size]) return;
+        seen[entry.size] = true;
+        list.push(entry);
       });
+      return list;
     }
-    return sizes;
+    return sizesObjectToArray(raw);
   }
 
   function normalizeVariant(raw) {
     if (!raw || typeof raw !== "object") return null;
     var color = String(raw.color || "").trim();
     if (!color) return null;
-    var sizes = normalizeVariantSizes(raw.sizes);
-    return { color: color, sizes: sizes };
+    return { color: color, sizes: normalizeVariantSizesList(raw.sizes) };
   }
 
   function migrateLegacyToVariants(colors, sizes, stock) {
     var colorList = Array.isArray(colors) ? colors.filter(Boolean) : [];
     var sizeList = Array.isArray(sizes) ? sizes.filter(Boolean) : [];
-    var stockMap = normalizeVariantSizes(stock);
+    var stockArr = sizesObjectToArray(stock);
+    var stockMap = {};
+    stockArr.forEach(function (e) {
+      stockMap[e.size] = e.stock;
+    });
     if (!colorList.length && !sizeList.length && !Object.keys(stockMap).length) return [];
-    if (!colorList.length) return [{ color: "Без цвета", sizes: stockMap }];
+    function toRows(keys) {
+      return keys
+        .map(function (size) {
+          return normalizeSizeEntry({ size: size, stock: stockMap[size] != null ? stockMap[size] : 0 });
+        })
+        .filter(Boolean);
+    }
+    if (!colorList.length) {
+      var keys0 = sizeList.length ? sizeList : Object.keys(stockMap);
+      return [{ color: "Без цвета", sizes: toRows(keys0) }];
+    }
     return colorList.map(function (color) {
-      var variantSizes = {};
       var keys = sizeList.length ? sizeList : Object.keys(stockMap);
-      keys.forEach(function (size) {
-        if (stockMap[size] !== undefined) variantSizes[size] = stockMap[size];
-      });
-      return { color: color, sizes: variantSizes };
+      return { color: color, sizes: toRows(keys) };
     });
   }
 
@@ -144,8 +175,8 @@
   function deriveSizesFromVariants(variants) {
     var set = {};
     (variants || []).forEach(function (v) {
-      Object.keys(v.sizes || {}).forEach(function (s) {
-        set[s] = true;
+      (v.sizes || []).forEach(function (e) {
+        if (e && e.size) set[e.size] = true;
       });
     });
     return Object.keys(set);
@@ -163,17 +194,62 @@
   function getVariantSizeLabels(product, colorName) {
     var variant = getVariantByColor(product, colorName);
     if (!variant) return [];
-    return Object.keys(variant.sizes || {});
+    return (variant.sizes || [])
+      .map(function (e) {
+        return e.size;
+      })
+      .filter(Boolean);
   }
 
   function getAvailableSizesForColor(product, colorName) {
     var variant = getVariantByColor(product, colorName);
     if (!variant) return [];
-    var keys = Object.keys(variant.sizes || {});
-    if (!keys.length) return Array.isArray(product.sizes) ? product.sizes : [];
-    return keys.filter(function (size) {
-      return variant.sizes[size] > 0;
+    var entries = variant.sizes || [];
+    if (!entries.length) return Array.isArray(product.sizes) ? product.sizes : [];
+    return entries
+      .filter(function (e) {
+        return e.stock > 0;
+      })
+      .map(function (e) {
+        return e.size;
+      });
+  }
+
+  function getProductTotalStock(product) {
+    var total = 0;
+    (product && product.variants ? product.variants : []).forEach(function (v) {
+      (v.sizes || []).forEach(function (e) {
+        if (Number.isFinite(e.stock) && e.stock > 0) total += e.stock;
+      });
     });
+    return total;
+  }
+
+  function getProductSizeSummary(product) {
+    var labels = {};
+    (product && product.variants ? product.variants : []).forEach(function (v) {
+      (v.sizes || []).forEach(function (e) {
+        if (e && e.size) labels[e.size] = true;
+      });
+    });
+    var list = Object.keys(labels);
+    if (!list.length) {
+      var legacy = Array.isArray(product && product.sizes) ? product.sizes : [];
+      if (!legacy.length) return { text: "—", count: 0 };
+      return { text: legacy.length + " размеров", count: legacy.length };
+    }
+    var numeric = list
+      .filter(function (s) {
+        return /^\d+$/.test(String(s));
+      })
+      .map(Number)
+      .sort(function (a, b) {
+        return a - b;
+      });
+    if (numeric.length >= 2 && numeric.length === list.length) {
+      return { text: numeric[0] + "–" + numeric[numeric.length - 1], count: list.length };
+    }
+    return { text: list.length + " размеров", count: list.length };
   }
 
   function hasAvailableStockForColor(product, colorName) {
@@ -461,6 +537,8 @@
     getVariantSizeLabels: getVariantSizeLabels,
     getAvailableSizesForColor: getAvailableSizesForColor,
     hasAvailableStockForColor: hasAvailableStockForColor,
+    getProductTotalStock: getProductTotalStock,
+    getProductSizeSummary: getProductSizeSummary,
     getSelectableSizes: getSelectableSizes,
     normalizeCategory: normalizeCategory,
     normalizeCategoriesList: normalizeCategoriesList,

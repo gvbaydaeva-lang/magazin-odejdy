@@ -87,49 +87,66 @@ export function isStorefrontProduct(product) {
   return product.published === true && images.length > 0;
 }
 
-export function normalizeVariantSizes(raw) {
-  const sizes = {};
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    Object.keys(raw).forEach((key) => {
-      const n = Number(raw[key]);
-      if (Number.isFinite(n) && n >= 0) sizes[String(key)] = Math.floor(n);
+export function normalizeSizeEntry(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const size = String(raw.size || raw.label || "").trim();
+  if (!size) return null;
+  const qty = Number(raw.stock ?? raw.qty ?? 0);
+  const stock = Number.isFinite(qty) && qty >= 0 ? Math.floor(qty) : 0;
+  return { size, stock };
+}
+
+/** Преобразует объект { S: 10 } в массив [{ size, stock }]. */
+export function sizesObjectToArray(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+  return Object.entries(raw)
+    .map(([size, stock]) => normalizeSizeEntry({ size, stock }))
+    .filter(Boolean);
+}
+
+export function normalizeVariantSizesList(raw) {
+  if (Array.isArray(raw)) {
+    const list = [];
+    const seen = new Set();
+    raw.forEach((item) => {
+      const entry = normalizeSizeEntry(item);
+      if (!entry || seen.has(entry.size)) return;
+      seen.add(entry.size);
+      list.push(entry);
     });
+    return list;
   }
-  return sizes;
+  return sizesObjectToArray(raw);
 }
 
 export function normalizeVariant(raw) {
   if (!raw || typeof raw !== "object") return null;
   const color = String(raw.color || "").trim();
   if (!color) return null;
-  const sizeKeys = Array.isArray(raw.sizeList)
-    ? raw.sizeList.map((s) => String(s).trim()).filter(Boolean)
-    : Object.keys(normalizeVariantSizes(raw.sizes));
-  const sizes = normalizeVariantSizes(raw.sizes);
-  const pruned = {};
-  sizeKeys.forEach((size) => {
-    if (sizes[size] !== undefined) pruned[size] = sizes[size];
-  });
-  return { color, sizes: pruned };
+  return { color, sizes: normalizeVariantSizesList(raw.sizes) };
 }
 
 export function migrateLegacyToVariants(colors, sizes, stock) {
   const colorList = Array.isArray(colors) ? colors.filter(Boolean) : [];
   const sizeList = Array.isArray(sizes) ? sizes.filter(Boolean) : [];
-  const stockMap = normalizeVariantSizes(stock);
+  const stockMap = sizesObjectToArray(stock).reduce((acc, e) => {
+    acc[e.size] = e.stock;
+    return acc;
+  }, {});
   if (!colorList.length && !sizeList.length && !Object.keys(stockMap).length) {
     return [];
   }
+  const toRows = (keys) =>
+    keys
+      .map((size) => normalizeSizeEntry({ size, stock: stockMap[size] ?? 0 }))
+      .filter(Boolean);
   if (!colorList.length) {
-    return [{ color: "Без цвета", sizes: { ...stockMap } }];
+    const keys = sizeList.length ? sizeList : Object.keys(stockMap);
+    return [{ color: "Без цвета", sizes: toRows(keys) }];
   }
   return colorList.map((color) => {
-    const variantSizes = {};
     const keys = sizeList.length ? sizeList : Object.keys(stockMap);
-    keys.forEach((size) => {
-      if (stockMap[size] !== undefined) variantSizes[size] = stockMap[size];
-    });
-    return { color, sizes: variantSizes };
+    return { color, sizes: toRows(keys) };
   });
 }
 
@@ -147,7 +164,9 @@ export function deriveColorsFromVariants(variants) {
 export function deriveSizesFromVariants(variants) {
   const set = new Set();
   (variants || []).forEach((v) => {
-    Object.keys(v.sizes || {}).forEach((s) => set.add(s));
+    (v.sizes || []).forEach((e) => {
+      if (e && e.size) set.add(e.size);
+    });
   });
   return Array.from(set);
 }
@@ -158,20 +177,53 @@ export function getVariantByColor(product, colorName) {
   return product.variants.find((v) => v.color === name) || null;
 }
 
-/** Все размеры варианта (ключи sizes), в т.ч. с нулевым остатком. */
+/** Все размеры варианта, в т.ч. с нулевым остатком. */
 export function getVariantSizeLabels(product, colorName) {
   const variant = getVariantByColor(product, colorName);
   if (!variant) return [];
-  return Object.keys(variant.sizes || {});
+  return (variant.sizes || []).map((e) => e.size).filter(Boolean);
 }
 
 /** Размеры с остатком > 0 для выбранного цвета. */
 export function getAvailableSizesForColor(product, colorName) {
   const variant = getVariantByColor(product, colorName);
   if (!variant) return [];
-  const entries = Object.entries(variant.sizes || {});
+  const entries = variant.sizes || [];
   if (!entries.length) return Array.isArray(product.sizes) ? product.sizes : [];
-  return entries.filter(([, qty]) => qty > 0).map(([size]) => size);
+  return entries.filter((e) => e.stock > 0).map((e) => e.size);
+}
+
+export function getProductTotalStock(product) {
+  let total = 0;
+  (product?.variants || []).forEach((v) => {
+    (v.sizes || []).forEach((e) => {
+      if (Number.isFinite(e.stock) && e.stock > 0) total += e.stock;
+    });
+  });
+  return total;
+}
+
+export function getProductSizeSummary(product) {
+  const labels = new Set();
+  (product?.variants || []).forEach((v) => {
+    (v.sizes || []).forEach((e) => {
+      if (e?.size) labels.add(e.size);
+    });
+  });
+  const list = Array.from(labels);
+  if (!list.length) {
+    const legacy = Array.isArray(product?.sizes) ? product.sizes : [];
+    if (!legacy.length) return { text: "—", count: 0 };
+    return { text: legacy.length + " размеров", count: legacy.length };
+  }
+  const numeric = list
+    .filter((s) => /^\d+$/.test(String(s)))
+    .map(Number)
+    .sort((a, b) => a - b);
+  if (numeric.length >= 2 && numeric.length === list.length) {
+    return { text: numeric[0] + "–" + numeric[numeric.length - 1], count: list.length };
+  }
+  return { text: list.length + " размеров", count: list.length };
 }
 
 export function hasAvailableStockForColor(product, colorName) {
