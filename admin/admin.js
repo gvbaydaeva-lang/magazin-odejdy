@@ -1,14 +1,26 @@
-// Этап админки без backend: данные в localStorage; каталог товаров общий с витриной — js/catalog.js
-import {
-  CATALOG_STORAGE_KEY,
-  ensureCatalogStorageReady,
-  loadCatalogProducts,
-  saveCatalogProducts,
-  normalizeProduct,
-} from "../js/catalog.js";
-import { products as defaultProductSeed } from "../js/products.js";
+// Этап админки без backend: localStorage + общий каталог (catalog-bridge.js, ключ fashionStoreCatalogProducts)
+(function () {
+  "use strict";
 
-const app = document.getElementById("app");
+  var app = document.getElementById("app");
+  var Catalog = window.FashionStoreCatalog;
+
+  if (!app) {
+    return;
+  }
+
+  if (!Catalog) {
+    app.innerHTML =
+      '<div class="page-wrap"><section class="auth-card"><h1>Ошибка загрузки</h1><p class="stub-text">Не найден catalog-bridge.js. Проверьте, что в папке admin есть файлы catalog-bridge.js и admin.js.</p></section></div>';
+    return;
+  }
+
+  var CATALOG_STORAGE_KEY = Catalog.CATALOG_STORAGE_KEY;
+  var ensureCatalogStorageReady = Catalog.ensureCatalogStorageReady;
+  var loadCatalogProducts = Catalog.loadCatalogProducts;
+  var saveCatalogProducts = Catalog.saveCatalogProducts;
+  var normalizeProduct = Catalog.normalizeProduct;
+  var defaultProductSeed = Catalog.DEFAULT_SEED;
 const STORAGE_KEYS = {
   auth: "adminAuth",
   owner: "adminOwner",
@@ -71,16 +83,89 @@ const STORAGE_KEYS = {
     message: null,
   };
 
-  initStorageDefaults();
-  hydrateStateFromStorage();
-  render();
+  bootstrap();
+
+  function bootstrap() {
+    try {
+      initStorageDefaults();
+      hydrateStateFromStorage();
+      normalizeState();
+      render();
+    } catch (err) {
+      console.error("Admin bootstrap:", err);
+      safeResetAndRestart(err);
+    }
+  }
+
+  function safeResetAndRestart(err) {
+    try {
+      localStorage.removeItem(STORAGE_KEYS.categories);
+      localStorage.removeItem(STORAGE_KEYS.subcategories);
+      localStorage.removeItem(STORAGE_KEYS.selectedCategory);
+      localStorage.removeItem(STORAGE_KEYS.currentSection);
+      localStorage.removeItem(STORAGE_KEYS.settings);
+      localStorage.removeItem(STORAGE_KEYS.users);
+      localStorage.removeItem(STORAGE_KEYS.stories);
+      localStorage.removeItem(CATALOG_STORAGE_KEY);
+    } catch (e) {
+      /* ignore */
+    }
+    try {
+      initStorageDefaults();
+      hydrateStateFromStorage();
+      normalizeState();
+      state.message = {
+        type: "msg-info",
+        text: "Данные были повреждены и восстановлены до безопасных значений.",
+      };
+      render();
+    } catch (e2) {
+      showFatalError(err || e2);
+    }
+  }
+
+  function normalizeState() {
+    if (!Array.isArray(state.categories)) state.categories = DEFAULT_CATEGORIES.slice();
+    if (!state.subcategories || typeof state.subcategories !== "object" || Array.isArray(state.subcategories)) {
+      state.subcategories = {};
+    }
+    if (typeof state.selectedCategory !== "string") state.selectedCategory = "";
+    if (!Array.isArray(state.products)) state.products = [];
+    if (!Array.isArray(state.users)) state.users = [];
+    if (!Array.isArray(state.stories)) state.stories = [];
+    if (!state.owner || typeof state.owner !== "object") {
+      state.owner = { name: "Владелец", email: "owner@example.com", phone: "+7" };
+    }
+    if (typeof state.currentSection !== "string" || !sections.some((item) => item.id === state.currentSection)) {
+      state.currentSection = "dashboard";
+    }
+  }
+
+  function showFatalError(err) {
+    var msg = err && err.message ? err.message : "Неизвестная ошибка";
+    app.innerHTML =
+      '<div class="page-wrap"><section class="auth-card"><h1>Не удалось открыть админ-панель</h1><p class="stub-text">' +
+      escapeHtml(msg) +
+      '</p><p class="stub-text">Попробуйте обновить страницу. Если не поможет — откройте консоль браузера (F12).</p><button type="button" class="btn btn-primary" id="fatalRetry">Попробовать снова</button></section></div>';
+    var retry = document.getElementById("fatalRetry");
+    if (retry) {
+      retry.addEventListener("click", function () {
+        bootstrap();
+      });
+    }
+  }
 
   function render() {
-    if (!state.isAuth) {
-      renderAuth();
-      return;
+    try {
+      if (!state.isAuth) {
+        renderAuth();
+        return;
+      }
+      renderAdmin();
+    } catch (err) {
+      console.error("Admin render:", err);
+      safeResetAndRestart(err);
     }
-    renderAdmin();
   }
 
   function renderAuth() {
@@ -643,20 +728,53 @@ const STORAGE_KEYS = {
   }
 
   function hydrateStateFromStorage() {
-    state.isAuth = localStorage.getItem(STORAGE_KEYS.auth) === "true";
-    state.owner = readFromStorage(STORAGE_KEYS.owner, state.owner);
-    state.categories = readFromStorage(STORAGE_KEYS.categories, DEFAULT_CATEGORIES);
-    state.subcategories = readFromStorage(STORAGE_KEYS.subcategories, {});
-    state.selectedCategory = readFromStorage(STORAGE_KEYS.selectedCategory, "");
-    state.settings = readFromStorage(STORAGE_KEYS.settings, {});
-    state.users = readFromStorage(STORAGE_KEYS.users, []);
+    state.isAuth = readAuth();
+    state.owner = readObject(STORAGE_KEYS.owner, state.owner);
+    state.categories = readArray(STORAGE_KEYS.categories, DEFAULT_CATEGORIES);
+    state.subcategories = readObject(STORAGE_KEYS.subcategories, {});
+    state.selectedCategory = readString(STORAGE_KEYS.selectedCategory, "");
+    state.settings = readObject(STORAGE_KEYS.settings, {});
+    state.users = readArray(STORAGE_KEYS.users, []);
     ensureCatalogStorageReady(defaultProductSeed);
     state.products = loadCatalogProducts(defaultProductSeed);
-    state.stories = readFromStorage(STORAGE_KEYS.stories, []);
-    state.currentSection = readFromStorage(STORAGE_KEYS.currentSection, "dashboard");
-    if (!sections.some((item) => item.id === state.currentSection)) {
-      state.currentSection = "dashboard";
+    if (!Array.isArray(state.products)) state.products = [];
+    state.stories = readArray(STORAGE_KEYS.stories, []);
+    state.currentSection = readString(STORAGE_KEYS.currentSection, "dashboard");
+  }
+
+  function readAuth() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEYS.auth);
+      if (raw === null) return false;
+      if (raw === "true") return true;
+      if (raw === "false") return false;
+      return JSON.parse(raw) === true;
+    } catch (e) {
+      try {
+        localStorage.removeItem(STORAGE_KEYS.auth);
+      } catch (err) {
+        /* ignore */
+      }
+      return false;
     }
+  }
+
+  function readArray(key, fallback) {
+    var value = readFromStorage(key, fallback);
+    return Array.isArray(value) ? value : fallback;
+  }
+
+  function readObject(key, fallback) {
+    var value = readFromStorage(key, fallback);
+    if (value && typeof value === "object" && !Array.isArray(value)) return value;
+    return fallback;
+  }
+
+  function readString(key, fallback) {
+    var value = readFromStorage(key, fallback);
+    if (typeof value === "string") return value;
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
+    return fallback;
   }
 
   function persistAuth() {
@@ -704,17 +822,31 @@ const STORAGE_KEYS = {
   }
 
   function writeIfMissing(key, value) {
-    if (localStorage.getItem(key) === null) {
-      localStorage.setItem(key, JSON.stringify(value));
+    try {
+      if (localStorage.getItem(key) === null) {
+        localStorage.setItem(key, JSON.stringify(value));
+      }
+    } catch (e) {
+      /* private mode / quota */
     }
   }
 
   function readFromStorage(key, fallback) {
-    const raw = localStorage.getItem(key);
+    var raw;
+    try {
+      raw = localStorage.getItem(key);
+    } catch (e) {
+      return fallback;
+    }
     if (raw === null) return fallback;
     try {
       return JSON.parse(raw);
-    } catch {
+    } catch (e) {
+      try {
+        localStorage.removeItem(key);
+      } catch (err) {
+        /* ignore */
+      }
       return fallback;
     }
   }
@@ -732,3 +864,4 @@ const STORAGE_KEYS = {
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#39;");
   }
+})();
