@@ -410,92 +410,103 @@
     });
   }
 
-  function renderCategoryListItem(item, selectedName) {
+  function setCategoryVisibleByName(categoryName, visible) {
+    state.categories = normalizeCategoriesList(state.categories).map(function (item) {
+      if (getCategoryName(item) === categoryName) {
+        return { name: item.name, visible: visible };
+      }
+      return item;
+    });
+    persistCategories();
+  }
+
+  function renderStorefrontCategoryCard(item) {
     var name = getCategoryName(item);
-    var visible = item.visible !== false;
     return (
-      '<li class="category-list-item' +
-      (selectedName === name ? " is-selected" : "") +
-      '">' +
-      '<button type="button" class="category-select" data-category="' +
+      '<li class="category-card category-card--storefront">' +
+      '<span class="category-card__name">' +
       escapeHtml(name) +
-      '">' +
-      escapeHtml(name) +
-      "</button>" +
+      "</span>" +
       '<label class="category-visibility">' +
       '<input type="checkbox" class="category-visible-toggle" data-category="' +
       escapeHtml(name) +
-      '"' +
-      (visible ? " checked" : "") +
-      " />" +
-      "<span>" +
-      (visible ? "Показывать на сайте" : "Скрыта с сайта") +
-      "</span>" +
+      '" checked />' +
+      "<span>Показывать на сайте</span>" +
       "</label>" +
-      '<button type="button" class="category-delete" data-delete-category="' +
+      '<button type="button" class="btn btn-ghost btn-sm category-remove-storefront" data-remove-from-storefront="' +
       escapeHtml(name) +
-      '">Удалить</button>' +
+      '">Удалить с витрины</button>' +
+      "</li>"
+    );
+  }
+
+  function renderAvailableCategoryCard(item) {
+    var name = getCategoryName(item);
+    return (
+      '<li class="category-card category-card--available">' +
+      '<span class="category-card__name">' +
+      escapeHtml(name) +
+      "</span>" +
+      '<button type="button" class="btn btn-primary btn-sm category-add-storefront" data-add-to-storefront="' +
+      escapeHtml(name) +
+      '">Добавить</button>' +
       "</li>"
     );
   }
 
   function renderCategoriesSection() {
-    const selected = state.selectedCategory;
     const all = normalizeCategoriesList(state.categories);
     const filtered = filterCategoriesBySearch(all);
     const onStorefront = filtered.filter(function (item) {
-      return item.visible;
+      return item.visible === true;
+    });
+    const availableOnly = filtered.filter(function (item) {
+      return item.visible !== true;
     });
     const storefrontList =
-      onStorefront
-        .map(function (item) {
-          return renderCategoryListItem(item, selected);
-        })
-        .join("") || '<li class="category-list-empty">Нет категорий на витрине</li>';
-    const allList =
-      filtered
-        .map(function (item) {
-          return renderCategoryListItem(item, selected);
-        })
-        .join("") || '<li class="category-list-empty">Категории не найдены</li>';
+      onStorefront.map(renderStorefrontCategoryCard).join("") ||
+      '<li class="category-list-empty">На витрине пока нет категорий. Добавьте из списка ниже.</li>';
+    const availableList =
+      availableOnly.map(renderAvailableCategoryCard).join("") ||
+      '<li class="category-list-empty">Нет доступных категорий. Создайте новую выше.</li>';
 
-    const related = selected ? state.subcategories[selected] || [] : [];
-    return `
-      <article class="stub-card">
-        <h3 class="stub-title">Категории</h3>
-        <p class="stub-text">Управляйте каталогом и выберите, какие категории видны на витрине.</p>
-        <div class="inline-form">
-          <input id="newCategoryInput" class="input" type="text" placeholder="Новая категория" />
-          <button type="button" id="addCategoryBtn" class="btn btn-primary">Добавить категорию</button>
-        </div>
-        <div class="field category-search-field">
-          <label class="label" for="categorySearchInput">Найти категорию</label>
-          <input id="categorySearchInput" class="input" type="search" placeholder="Введите название..." value="${escapeHtml(state.categoriesSearchQuery || "")}" />
-        </div>
-        <div id="categoriesMessage"></div>
-        <section class="category-section">
-          <h4 class="category-section-title">Категории на витрине <span class="category-section-count">${onStorefront.length}</span></h4>
-          <ul class="category-list">${storefrontList}</ul>
-        </section>
-        <section class="category-section">
-          <h4 class="category-section-title">Все доступные категории <span class="category-section-count">${filtered.length}</span></h4>
-          <ul class="category-list">${allList}</ul>
-        </section>
-        ${
-          selected
-            ? `<div class="selected-box">
-                <strong>Выбрана категория: ${escapeHtml(selected)}</strong>
-                ${
-                  related.length
-                    ? `<ul class="stub-text">${related.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>`
-                    : '<p class="stub-text">У этой категории пока нет подкатегорий.</p>'
-                }
-                <button type="button" id="goToSubcategoriesBtn" class="btn btn-ghost">Добавить подкатегорию</button>
-              </div>`
-            : '<p class="stub-text">Выберите категорию для просмотра подкатегорий.</p>'
-        }
-      </article>
-    `;
+    return (
+      '<article class="stub-card categories-page">' +
+      '<h3 class="stub-title">Категории</h3>' +
+      '<p class="stub-text">Категории на витрине видны покупателям. Остальные хранятся в системе и доступны для добавления.</p>' +
+      '<div class="inline-form categories-add-form">' +
+      '<input id="newCategoryInput" class="input" type="text" placeholder="Новая категория" />' +
+      '<button type="button" id="addCategoryBtn" class="btn btn-primary">Создать категорию</button>' +
+      "</div>" +
+      '<div class="field category-search-field">' +
+      '<label class="label" for="categorySearchInput">Найти категорию</label>' +
+      '<input id="categorySearchInput" class="input" type="search" placeholder="Введите название..." value="' +
+      escapeHtml(state.categoriesSearchQuery || "") +
+      '" />' +
+      "</div>" +
+      '<div id="categoriesMessage"></div>' +
+      '<div class="categories-panels">' +
+      '<section class="category-section category-section--storefront">' +
+      '<h4 class="category-section-title">Категории на витрине <span class="category-section-count">' +
+      onStorefront.length +
+      "</span></h4>" +
+      '<p class="category-section-hint">Покупатели видят эти категории в фильтрах на сайте.</p>' +
+      '<ul class="category-list">' +
+      storefrontList +
+      "</ul>" +
+      "</section>" +
+      '<section class="category-section category-section--available">' +
+      '<h4 class="category-section-title">Все доступные категории <span class="category-section-count">' +
+      availableOnly.length +
+      "</span></h4>" +
+      '<p class="category-section-hint">Категории системы. Нажмите «Добавить», чтобы показать на витрине.</p>' +
+      '<ul class="category-list">' +
+      availableList +
+      "</ul>" +
+      "</section>" +
+      "</div>" +
+      "</article>"
+    );
   }
 
   function productsUsingSubcategory(category, subcat) {
@@ -977,7 +988,6 @@
   function bindCategoriesEvents() {
     const input = document.getElementById("newCategoryInput");
     const addBtn = document.getElementById("addCategoryBtn");
-    const goBtn = document.getElementById("goToSubcategoriesBtn");
     const searchInput = document.getElementById("categorySearchInput");
     const section = document.getElementById("sectionContent");
 
@@ -1002,8 +1012,13 @@
         showSectionMessage("categoriesMessage", "msg-error", "Категория уже существует");
         return;
       }
-      state.categories.push({ name: name, visible: true });
+      state.categories.push({ name: name, visible: false });
       persistCategories();
+      showSectionMessage(
+        "categoriesMessage",
+        "msg-success",
+        "Категория создана. Нажмите «Добавить», чтобы показать на витрине."
+      );
       renderAdmin();
     });
 
@@ -1011,62 +1026,29 @@
       const toggle = event.target.closest(".category-visible-toggle");
       if (!toggle) return;
       const categoryName = toggle.dataset.category;
-      state.categories = normalizeCategoriesList(state.categories).map(function (item) {
-        if (getCategoryName(item) === categoryName) {
-          return { name: item.name, visible: toggle.checked };
-        }
-        return item;
-      });
-      persistCategories();
+      setCategoryVisibleByName(categoryName, toggle.checked);
       renderAdmin();
     });
 
     section.addEventListener("click", function (event) {
-      const selectBtn = event.target.closest("[data-category]");
-      if (selectBtn) {
-        state.selectedCategory = selectBtn.dataset.category;
-        persistSelectedCategory();
+      const addToStorefront = event.target.closest("[data-add-to-storefront]");
+      if (addToStorefront) {
+        const categoryName = addToStorefront.dataset.addToStorefront;
+        setCategoryVisibleByName(categoryName, true);
+        showSectionMessage("categoriesMessage", "msg-success", "Категория добавлена на витрину");
         renderAdmin();
         return;
       }
-      const deleteBtn = event.target.closest("[data-delete-category]");
-      if (!deleteBtn) return;
-      const category = deleteBtn.dataset.deleteCategory;
-      state.categories = state.categories.filter(function (item) {
-        return getCategoryName(item) !== category;
-      });
-      delete state.subcategories[category];
-      var hadOrphanProducts = false;
-      state.products = state.products.map(function (p) {
-        if (p.cat === category) {
-          hadOrphanProducts = true;
-          return normalizeProduct(Object.assign({}, p, { cat: "Без категории", subcat: "" }));
-        }
-        return p;
-      });
-      if (
-        hadOrphanProducts &&
-        !state.categories.some(function (item) {
-          return getCategoryName(item) === "Без категории";
-        })
-      ) {
-        state.categories.push({ name: "Без категории", visible: false });
-      }
-      if (state.selectedCategory === category) state.selectedCategory = "";
-      persistCategories();
-      persistProducts();
-      persistSubcategories();
-      persistSelectedCategory();
-      renderAdmin();
-    });
 
-    if (goBtn) {
-      goBtn.addEventListener("click", function () {
-        state.currentSection = "subcategories";
-        persistCurrentSection();
+      const removeFromStorefront = event.target.closest("[data-remove-from-storefront]");
+      if (removeFromStorefront) {
+        const categoryName = removeFromStorefront.dataset.removeFromStorefront;
+        if (!window.confirm("Удалить категорию с витрины?")) return;
+        setCategoryVisibleByName(categoryName, false);
+        showSectionMessage("categoriesMessage", "msg-info", "Категория скрыта с витрины");
         renderAdmin();
-      });
-    }
+      }
+    });
   }
 
   function bindSubcategoriesEvents() {

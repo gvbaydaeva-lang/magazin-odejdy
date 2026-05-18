@@ -94,11 +94,23 @@ function renderCategories() {
   });
 }
 
+function visibleCategorySet() {
+  return new Set(storeCategories);
+}
+
+function isProductVisibleOnStorefront(product) {
+  const cat = product && product.cat ? String(product.cat).trim() : "";
+  if (!cat) return false;
+  if (storeCategories.length) return visibleCategorySet().has(cat);
+  return true;
+}
+
 function renderProducts() {
   const container = $("products");
   container.innerHTML = "";
 
   catalogProducts
+    .filter((p) => isProductVisibleOnStorefront(p))
     .filter((p) => selectedCat === "Все" || p.cat === selectedCat)
     .forEach((p) => {
       const div = document.createElement("div");

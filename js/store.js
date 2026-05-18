@@ -115,7 +115,7 @@ export function getCategoryName(item) {
 }
 
 export function getVisibleCategories(list) {
-  return normalizeCategoriesList(list).filter((item) => item.visible);
+  return normalizeCategoriesList(list).filter((item) => item.visible === true);
 }
 
 export function getVisibleCategoryNames(list) {

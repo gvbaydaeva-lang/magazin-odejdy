@@ -127,7 +127,7 @@
   function getVisibleCategoryNames(list) {
     return normalizeCategoriesList(list)
       .filter(function (item) {
-        return item.visible;
+        return item.visible === true;
       })
       .map(function (item) {
         return item.name;
