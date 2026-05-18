@@ -20,6 +20,8 @@
   var PRODUCT_SIZE_OPTIONS = Store.PRODUCT_SIZE_OPTIONS;
   var PRESET_COLORS = Store.PRESET_COLORS;
   var colorToCss = Store.colorToCss;
+  var getCategoryName = Store.getCategoryName;
+  var normalizeCategoriesList = Store.normalizeCategoriesList;
   var MAX_IMAGE_BYTES = 3 * 1024 * 1024;
   var MAX_VIDEO_BYTES = 12 * 1024 * 1024;
   var STORAGE_KEYS = {
@@ -35,7 +37,7 @@
     users: "fashionStoreAdminUsers",
   };
 
-  const DEFAULT_CATEGORIES = [
+  const DEFAULT_CATEGORY_NAMES = [
     "Платья",
     "Юбки",
     "Джинсы",
@@ -57,6 +59,9 @@
     "Аксессуары",
     "Обувь",
   ];
+  const DEFAULT_CATEGORIES = DEFAULT_CATEGORY_NAMES.map(function (name) {
+    return { name: name, visible: true };
+  });
 
   const sections = [
     { id: "dashboard", title: "Панель" },
@@ -84,6 +89,7 @@
     message: null,
     editingSubcategory: null,
     editingProductId: null,
+    categoriesSearchQuery: "",
     productDraftMedia: { image: null, video: null, imageName: "", videoName: "" },
     productFormCustomColors: [],
     lastEditingProductId: undefined,
@@ -131,7 +137,7 @@
   }
 
   function normalizeState() {
-    if (!Array.isArray(state.categories)) state.categories = DEFAULT_CATEGORIES.slice();
+    state.categories = normalizeCategoriesList(state.categories, DEFAULT_CATEGORIES);
     if (!state.subcategories || typeof state.subcategories !== "object" || Array.isArray(state.subcategories)) {
       state.subcategories = {};
     }
@@ -396,28 +402,85 @@
     )}</h3><p class="stub-text">${sectionMap[sectionId] || "Раздел будет добавлен на следующем этапе"}</p></article>`;
   }
 
+  function filterCategoriesBySearch(list) {
+    var query = (state.categoriesSearchQuery || "").trim().toLowerCase();
+    if (!query) return list;
+    return list.filter(function (item) {
+      return getCategoryName(item).toLowerCase().indexOf(query) !== -1;
+    });
+  }
+
+  function renderCategoryListItem(item, selectedName) {
+    var name = getCategoryName(item);
+    var visible = item.visible !== false;
+    return (
+      '<li class="category-list-item' +
+      (selectedName === name ? " is-selected" : "") +
+      '">' +
+      '<button type="button" class="category-select" data-category="' +
+      escapeHtml(name) +
+      '">' +
+      escapeHtml(name) +
+      "</button>" +
+      '<label class="category-visibility">' +
+      '<input type="checkbox" class="category-visible-toggle" data-category="' +
+      escapeHtml(name) +
+      '"' +
+      (visible ? " checked" : "") +
+      " />" +
+      "<span>" +
+      (visible ? "Показывать на сайте" : "Скрыта с сайта") +
+      "</span>" +
+      "</label>" +
+      '<button type="button" class="category-delete" data-delete-category="' +
+      escapeHtml(name) +
+      '">Удалить</button>' +
+      "</li>"
+    );
+  }
+
   function renderCategoriesSection() {
     const selected = state.selectedCategory;
-    const list = state.categories
-      .map(
-        (item) => `
-      <div class="category-card ${selected === item ? "selected" : ""}" data-category="${escapeHtml(item)}">
-        <button type="button" class="category-select" data-category="${escapeHtml(item)}">${escapeHtml(item)}</button>
-        <button type="button" class="category-delete" data-delete-category="${escapeHtml(item)}">Удалить</button>
-      </div>`
-      )
-      .join("");
+    const all = normalizeCategoriesList(state.categories);
+    const filtered = filterCategoriesBySearch(all);
+    const onStorefront = filtered.filter(function (item) {
+      return item.visible;
+    });
+    const storefrontList =
+      onStorefront
+        .map(function (item) {
+          return renderCategoryListItem(item, selected);
+        })
+        .join("") || '<li class="category-list-empty">Нет категорий на витрине</li>';
+    const allList =
+      filtered
+        .map(function (item) {
+          return renderCategoryListItem(item, selected);
+        })
+        .join("") || '<li class="category-list-empty">Категории не найдены</li>';
 
     const related = selected ? state.subcategories[selected] || [] : [];
     return `
       <article class="stub-card">
         <h3 class="stub-title">Категории</h3>
+        <p class="stub-text">Управляйте каталогом и выберите, какие категории видны на витрине.</p>
         <div class="inline-form">
           <input id="newCategoryInput" class="input" type="text" placeholder="Новая категория" />
           <button type="button" id="addCategoryBtn" class="btn btn-primary">Добавить категорию</button>
         </div>
+        <div class="field category-search-field">
+          <label class="label" for="categorySearchInput">Найти категорию</label>
+          <input id="categorySearchInput" class="input" type="search" placeholder="Введите название..." value="${escapeHtml(state.categoriesSearchQuery || "")}" />
+        </div>
         <div id="categoriesMessage"></div>
-        <div class="categories-grid">${list || '<p class="stub-text">Пока нет категорий.</p>'}</div>
+        <section class="category-section">
+          <h4 class="category-section-title">Категории на витрине <span class="category-section-count">${onStorefront.length}</span></h4>
+          <ul class="category-list">${storefrontList}</ul>
+        </section>
+        <section class="category-section">
+          <h4 class="category-section-title">Все доступные категории <span class="category-section-count">${filtered.length}</span></h4>
+          <ul class="category-list">${allList}</ul>
+        </section>
         ${
           selected
             ? `<div class="selected-box">
@@ -429,7 +492,7 @@
                 }
                 <button type="button" id="goToSubcategoriesBtn" class="btn btn-ghost">Добавить подкатегорию</button>
               </div>`
-            : '<p class="stub-text">Выберите категорию.</p>'
+            : '<p class="stub-text">Выберите категорию для просмотра подкатегорий.</p>'
         }
       </article>
     `;
@@ -485,13 +548,14 @@
     }
     var options = state.categories
       .map(function (cat) {
+        var catName = getCategoryName(cat);
         return (
           '<option value="' +
-          escapeHtml(cat) +
+          escapeHtml(catName) +
           '"' +
-          (formCategory === cat ? " selected" : "") +
+          (formCategory === catName ? " selected" : "") +
           ">" +
-          escapeHtml(cat) +
+          escapeHtml(catName) +
           "</option>"
         );
       })
@@ -730,8 +794,9 @@
     var formSub = editing ? editing.subcat || "" : "";
     var catOptions = state.categories
       .map(function (c) {
-        var sel = formCat === c ? " selected" : "";
-        return '<option value="' + escapeHtml(c) + '"' + sel + ">" + escapeHtml(c) + "</option>";
+        var catName = getCategoryName(c);
+        var sel = formCat === catName ? " selected" : "";
+        return '<option value="' + escapeHtml(catName) + '"' + sel + ">" + escapeHtml(catName) + "</option>";
       })
       .join("");
     var subOptions = buildSubcategoryOptionsHtml(formCat, formSub);
@@ -913,7 +978,15 @@
     const input = document.getElementById("newCategoryInput");
     const addBtn = document.getElementById("addCategoryBtn");
     const goBtn = document.getElementById("goToSubcategoriesBtn");
+    const searchInput = document.getElementById("categorySearchInput");
     const section = document.getElementById("sectionContent");
+
+    if (searchInput) {
+      searchInput.addEventListener("input", function () {
+        state.categoriesSearchQuery = searchInput.value;
+        renderAdmin();
+      });
+    }
 
     addBtn.addEventListener("click", function () {
       const name = input.value.trim();
@@ -921,11 +994,29 @@
         showSectionMessage("categoriesMessage", "msg-error", "Введите название категории");
         return;
       }
-      if (state.categories.some((item) => item.toLowerCase() === name.toLowerCase())) {
+      if (
+        state.categories.some(function (item) {
+          return getCategoryName(item).toLowerCase() === name.toLowerCase();
+        })
+      ) {
         showSectionMessage("categoriesMessage", "msg-error", "Категория уже существует");
         return;
       }
-      state.categories.push(name);
+      state.categories.push({ name: name, visible: true });
+      persistCategories();
+      renderAdmin();
+    });
+
+    section.addEventListener("change", function (event) {
+      const toggle = event.target.closest(".category-visible-toggle");
+      if (!toggle) return;
+      const categoryName = toggle.dataset.category;
+      state.categories = normalizeCategoriesList(state.categories).map(function (item) {
+        if (getCategoryName(item) === categoryName) {
+          return { name: item.name, visible: toggle.checked };
+        }
+        return item;
+      });
       persistCategories();
       renderAdmin();
     });
@@ -941,7 +1032,9 @@
       const deleteBtn = event.target.closest("[data-delete-category]");
       if (!deleteBtn) return;
       const category = deleteBtn.dataset.deleteCategory;
-      state.categories = state.categories.filter((item) => item !== category);
+      state.categories = state.categories.filter(function (item) {
+        return getCategoryName(item) !== category;
+      });
       delete state.subcategories[category];
       var hadOrphanProducts = false;
       state.products = state.products.map(function (p) {
@@ -951,8 +1044,13 @@
         }
         return p;
       });
-      if (hadOrphanProducts && state.categories.indexOf("Без категории") === -1) {
-        state.categories.push("Без категории");
+      if (
+        hadOrphanProducts &&
+        !state.categories.some(function (item) {
+          return getCategoryName(item) === "Без категории";
+        })
+      ) {
+        state.categories.push({ name: "Без категории", visible: false });
       }
       if (state.selectedCategory === category) state.selectedCategory = "";
       persistCategories();
@@ -1361,7 +1459,7 @@
   }
 
   function initStorageDefaults() {
-    writeIfMissing(STORAGE_KEYS.categories, DEFAULT_CATEGORIES);
+    writeIfMissing(STORAGE_KEYS.categories, normalizeCategoriesList(DEFAULT_CATEGORIES));
     writeIfMissing(STORAGE_KEYS.subcategories, {});
     writeIfMissing(STORAGE_KEYS.selectedCategory, "");
     writeIfMissing(STORAGE_KEYS.settings, Store.DEFAULT_SETTINGS);
@@ -1433,7 +1531,7 @@
   }
 
   function persistCategories() {
-    Store.saveCategories(state.categories);
+    state.categories = Store.saveCategories(state.categories);
   }
 
   function persistSubcategories() {

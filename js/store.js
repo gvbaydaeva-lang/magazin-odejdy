@@ -87,6 +87,49 @@ export function isStorefrontProduct(product) {
   return product.published === true && images.length > 0;
 }
 
+export function normalizeCategory(raw) {
+  if (typeof raw === "string") {
+    const name = raw.trim();
+    if (!name) return null;
+    return { name, visible: true };
+  }
+  if (raw && typeof raw === "object") {
+    const name = String(raw.name || raw.title || "").trim();
+    if (!name) return null;
+    const visible = raw.visible !== false && raw.visible !== "false" && raw.visible !== 0;
+    return { name, visible };
+  }
+  return null;
+}
+
+export function normalizeCategoriesList(list, fallback = []) {
+  const source = Array.isArray(list) && list.length ? list : fallback;
+  if (!Array.isArray(source)) return [];
+  return source.map(normalizeCategory).filter(Boolean);
+}
+
+export function getCategoryName(item) {
+  if (typeof item === "string") return item.trim();
+  if (item && typeof item === "object") return String(item.name || "").trim();
+  return "";
+}
+
+export function getVisibleCategories(list) {
+  return normalizeCategoriesList(list).filter((item) => item.visible);
+}
+
+export function getVisibleCategoryNames(list) {
+  return getVisibleCategories(list).map((item) => item.name);
+}
+
+function migrateCategoriesIfNeeded() {
+  const raw = safeParse(safeGet(STORAGE_KEYS.categories), null);
+  if (!Array.isArray(raw) || !raw.length) return;
+  const needsMigration = raw.some((item) => typeof item === "string");
+  if (!needsMigration) return;
+  saveCategories(normalizeCategoriesList(raw));
+}
+
 function stableId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
   return `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -187,18 +230,25 @@ export function migrateStorage() {
       safeSet(STORAGE_KEYS.settings, { ...DEFAULT_SETTINGS, ...legacy });
     }
   }
+  migrateCategoriesIfNeeded();
 }
 
 export function loadCategories(fallback = []) {
   migrateStorage();
   const raw = safeParse(safeGet(STORAGE_KEYS.categories), null);
-  return Array.isArray(raw) && raw.length ? raw : fallback;
+  const normalized = normalizeCategoriesList(raw, fallback);
+  return normalized.length ? normalized : normalizeCategoriesList(fallback);
 }
 
 export function saveCategories(list) {
-  const arr = Array.isArray(list) ? list : [];
+  const arr = normalizeCategoriesList(list);
   safeSet(STORAGE_KEYS.categories, arr);
   return arr;
+}
+
+/** Имена категорий для фильтров на витрине (только visible: true). */
+export function loadCategoriesForStorefront(fallback = []) {
+  return getVisibleCategoryNames(loadCategories(fallback));
 }
 
 export function loadSubcategories(fallback = {}) {

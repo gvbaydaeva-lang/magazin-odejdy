@@ -4,6 +4,11 @@ import { STORAGE_KEYS } from "./store.js";
 export {
   STORAGE_KEYS,
   normalizeProduct,
+  normalizeCategory,
+  normalizeCategoriesList,
+  getCategoryName,
+  loadCategories,
+  loadCategoriesForStorefront,
   migrateStorage as migrateCatalogStorage,
   ensureProductsSeed as ensureCatalogStorageReady,
   loadProductsForStorefront as loadCatalogProducts,

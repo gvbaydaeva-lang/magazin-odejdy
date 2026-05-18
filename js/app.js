@@ -4,7 +4,7 @@ import {
   migrateStorage,
   ensureProductsSeed,
   loadProductsForStorefront,
-  loadCategories,
+  loadCategoriesForStorefront,
   loadSettings,
   colorToCss,
 } from "./store.js";
@@ -360,7 +360,7 @@ function reloadCatalogFromStorage() {
   migrateStorage();
   ensureProductsSeed(defaultProducts);
   storeSettings = loadSettings();
-  storeCategories = loadCategories([]);
+  storeCategories = loadCategoriesForStorefront([]);
   catalogProducts = loadProductsForStorefront(defaultProducts);
   applyStoreSettings();
   if (!categoryFiltersFromStorage().includes(selectedCat)) {

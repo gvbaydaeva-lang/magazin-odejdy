@@ -93,6 +93,74 @@
     return product.published === true && images.length > 0;
   }
 
+  function normalizeCategory(raw) {
+    if (typeof raw === "string") {
+      var nameStr = raw.trim();
+      if (!nameStr) return null;
+      return { name: nameStr, visible: true };
+    }
+    if (raw && typeof raw === "object") {
+      var name = String(raw.name || raw.title || "").trim();
+      if (!name) return null;
+      var visible = raw.visible !== false && raw.visible !== "false" && raw.visible !== 0;
+      return { name: name, visible: visible };
+    }
+    return null;
+  }
+
+  function normalizeCategoriesList(list, fallback) {
+    var source = Array.isArray(list) && list.length ? list : fallback;
+    if (!Array.isArray(source)) return [];
+    return source
+      .map(normalizeCategory)
+      .filter(function (item) {
+        return Boolean(item);
+      });
+  }
+
+  function getCategoryName(item) {
+    if (typeof item === "string") return item.trim();
+    if (item && typeof item === "object") return String(item.name || "").trim();
+    return "";
+  }
+
+  function getVisibleCategoryNames(list) {
+    return normalizeCategoriesList(list)
+      .filter(function (item) {
+        return item.visible;
+      })
+      .map(function (item) {
+        return item.name;
+      });
+  }
+
+  function migrateCategoriesIfNeeded() {
+    var raw = safeParse(safeGet(KEYS.categories), null);
+    if (!Array.isArray(raw) || !raw.length) return;
+    var needsMigration = raw.some(function (item) {
+      return typeof item === "string";
+    });
+    if (!needsMigration) return;
+    saveCategories(normalizeCategoriesList(raw));
+  }
+
+  function loadCategoriesForStorefront(fallback) {
+    return getVisibleCategoryNames(loadCategories(fallback));
+  }
+
+  function loadCategories(fallback) {
+    migrateStorage();
+    var raw = safeParse(safeGet(KEYS.categories), null);
+    var normalized = normalizeCategoriesList(raw, fallback);
+    return normalized.length ? normalized : normalizeCategoriesList(fallback);
+  }
+
+  function saveCategories(list) {
+    var arr = normalizeCategoriesList(list);
+    safeSet(KEYS.categories, arr);
+    return arr;
+  }
+
   var DEFAULT_SEED = [
     {
       id: "seed-dress-1",
@@ -238,6 +306,7 @@
         safeSet(KEYS.settings, merged);
       }
     }
+    migrateCategoriesIfNeeded();
   }
 
   function ensureProductsSeed(seed) {
@@ -290,6 +359,11 @@
     COLOR_HEX: COLOR_HEX,
     colorToCss: colorToCss,
     isStorefrontProduct: isStorefrontProduct,
+    normalizeCategory: normalizeCategory,
+    normalizeCategoriesList: normalizeCategoriesList,
+    getCategoryName: getCategoryName,
+    getVisibleCategoryNames: getVisibleCategoryNames,
+    loadCategoriesForStorefront: loadCategoriesForStorefront,
     migrateStorage: migrateStorage,
     ensureProductsSeed: ensureProductsSeed,
     ensureCatalogStorageReady: ensureProductsSeed,
@@ -297,16 +371,8 @@
     loadCatalogProducts: loadProductsForStorefront,
     saveProducts: saveProducts,
     saveCatalogProducts: saveProducts,
-    loadCategories: function (fallback) {
-      migrateStorage();
-      var raw = safeParse(safeGet(KEYS.categories), null);
-      return Array.isArray(raw) && raw.length ? raw : fallback || [];
-    },
-    saveCategories: function (list) {
-      var arr = Array.isArray(list) ? list : [];
-      safeSet(KEYS.categories, arr);
-      return arr;
-    },
+    loadCategories: loadCategories,
+    saveCategories: saveCategories,
     loadSubcategories: function (fallback) {
       migrateStorage();
       var raw = safeParse(safeGet(KEYS.subcategories), null);
