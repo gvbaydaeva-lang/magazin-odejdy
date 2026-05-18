@@ -260,6 +260,13 @@ select {
   border-color: #6c4831;
 }
 
+.product-meta,
+.product-meta-modal {
+  font-size: 13px;
+  color: #7b706b;
+  margin: 4px 0;
+}
+
 @media (max-width: 640px) {
   .banner {
     min-height: 180px;

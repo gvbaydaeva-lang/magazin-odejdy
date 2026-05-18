@@ -3,36 +3,32 @@
   "use strict";
 
   var app = document.getElementById("app");
-  var Catalog = window.FashionStoreCatalog;
+  var Store = window.FashionStore || window.FashionStoreCatalog;
 
   if (!app) {
     return;
   }
 
-  if (!Catalog) {
+  if (!Store) {
     app.innerHTML =
       '<div class="page-wrap"><section class="auth-card"><h1>Ошибка загрузки</h1><p class="stub-text">Не найден catalog-bridge.js. Проверьте, что в папке admin есть файлы catalog-bridge.js и admin.js.</p></section></div>';
     return;
   }
 
-  var CATALOG_STORAGE_KEY = Catalog.CATALOG_STORAGE_KEY;
-  var ensureCatalogStorageReady = Catalog.ensureCatalogStorageReady;
-  var loadCatalogProducts = Catalog.loadCatalogProducts;
-  var saveCatalogProducts = Catalog.saveCatalogProducts;
-  var normalizeProduct = Catalog.normalizeProduct;
-  var defaultProductSeed = Catalog.DEFAULT_SEED;
-const STORAGE_KEYS = {
-  auth: "adminAuth",
-  owner: "adminOwner",
-  categories: "fashionStoreAdminCategories",
-  subcategories: "fashionStoreAdminSubcategories",
-  selectedCategory: "fashionStoreAdminSelectedCategory",
-  currentSection: "fashionStoreAdminCurrentSection",
-  settings: "fashionStoreAdminSettings",
-  users: "fashionStoreAdminUsers",
-  products: CATALOG_STORAGE_KEY,
-  stories: "fashionStoreAdminStories",
-};
+  var normalizeProduct = Store.normalizeProduct;
+  var defaultProductSeed = Store.DEFAULT_SEED;
+  var STORAGE_KEYS = {
+    auth: "adminAuth",
+    owner: "adminOwner",
+    categories: Store.KEYS.categories,
+    subcategories: Store.KEYS.subcategories,
+    products: Store.KEYS.products,
+    stories: Store.KEYS.stories,
+    settings: Store.KEYS.settings,
+    selectedCategory: "fashionStoreAdminSelectedCategory",
+    currentSection: "fashionStoreAdminCurrentSection",
+    users: "fashionStoreAdminUsers",
+  };
 
   const DEFAULT_CATEGORIES = [
     "Платья",
@@ -81,6 +77,8 @@ const STORAGE_KEYS = {
     products: [],
     stories: [],
     message: null,
+    editingSubcategory: null,
+    editingProductId: null,
   };
 
   bootstrap();
@@ -106,7 +104,7 @@ const STORAGE_KEYS = {
       localStorage.removeItem(STORAGE_KEYS.settings);
       localStorage.removeItem(STORAGE_KEYS.users);
       localStorage.removeItem(STORAGE_KEYS.stories);
-      localStorage.removeItem(CATALOG_STORAGE_KEY);
+      localStorage.removeItem(STORAGE_KEYS.products);
     } catch (e) {
       /* ignore */
     }
@@ -378,12 +376,12 @@ const STORAGE_KEYS = {
     if (sectionId === "categories") return renderCategoriesSection();
     if (sectionId === "subcategories") return renderSubcategoriesSection();
     if (sectionId === "products") return renderProductsSection();
+    if (sectionId === "settings") return renderSettingsSection();
 
     const sectionMap = {
       orders: "Раздел заказов будет добавлен на следующем этапе",
       stories: "Раздел stories будет добавлен на следующем этапе",
       users: "Раздел пользователей будет добавлен на следующем этапе",
-      settings: "Раздел настроек будет добавлен на следующем этапе",
     };
     return `<article class="stub-card"><h3 class="stub-title">${getSectionTitle(
       sectionId
@@ -429,109 +427,233 @@ const STORAGE_KEYS = {
     `;
   }
 
-  function renderSubcategoriesSection() {
-    const options = state.categories
-      .map(
-        (cat) => `<option value="${escapeHtml(cat)}" ${state.selectedCategory === cat ? "selected" : ""}>${escapeHtml(
-          cat
-        )}</option>`
-      )
-      .join("");
-    const selected = state.selectedCategory;
-    const list = selected ? state.subcategories[selected] || [] : [];
+  function productsUsingSubcategory(category, subcat) {
+    return state.products.filter(function (p) {
+      return p.cat === category && p.subcat === subcat;
+    });
+  }
 
-    return `
-      <article class="stub-card">
-        <h3 class="stub-title">Подкатегории</h3>
-        <div class="field">
-          <label class="label" for="subcategoryCategorySelect">Категория</label>
-          <select id="subcategoryCategorySelect" class="input">
-            <option value="">Выберите категорию</option>
-            ${options}
-          </select>
-        </div>
-        <div class="inline-form">
-          <input id="newSubcategoryInput" class="input" type="text" placeholder="Новая подкатегория" />
-          <button type="button" id="addSubcategoryBtn" class="btn btn-primary">Добавить подкатегорию</button>
-        </div>
-        <div id="subcategoriesMessage"></div>
-        ${
-          selected
-            ? list.length
-              ? `<ul class="stub-text">${list.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>`
-              : '<p class="stub-text">У этой категории пока нет подкатегорий.</p>'
-            : '<p class="stub-text">Выберите категорию.</p>'
-        }
-      </article>
-    `;
+  function syncProductsSubcategoryRename(oldCat, oldSub, newCat, newSub) {
+    state.products = state.products.map(function (p) {
+      if (p.cat === oldCat && p.subcat === oldSub) {
+        return normalizeProduct(Object.assign({}, p, { cat: newCat, subcat: newSub }));
+      }
+      return p;
+    });
+  }
+
+  function clearProductsSubcategory(category, subcat) {
+    state.products = state.products.map(function (p) {
+      if (p.cat === category && p.subcat === subcat) {
+        return normalizeProduct(Object.assign({}, p, { subcat: "" }));
+      }
+      return p;
+    });
+  }
+
+  function buildSubcategoryOptionsHtml(cat, selected) {
+    if (!cat) {
+      return '<option value="">Сначала выберите категорию</option>';
+    }
+    var subs = state.subcategories[cat] || [];
+    if (!subs.length) {
+      return '<option value="">—</option>';
+    }
+    var html = '<option value="">Не выбрана</option>';
+    subs.forEach(function (sub) {
+      var sel = selected === sub ? " selected" : "";
+      html += '<option value="' + escapeHtml(sub) + '"' + sel + ">" + escapeHtml(sub) + "</option>";
+    });
+    return html;
+  }
+
+  function renderSubcategoriesSection() {
+    var edit = state.editingSubcategory;
+    var formCategory = state.selectedCategory;
+    var editName = "";
+    if (edit) {
+      var bucketEdit = state.subcategories[edit.category] || [];
+      editName = bucketEdit[edit.index] || "";
+    }
+    var options = state.categories
+      .map(function (cat) {
+        return (
+          '<option value="' +
+          escapeHtml(cat) +
+          '"' +
+          (formCategory === cat ? " selected" : "") +
+          ">" +
+          escapeHtml(cat) +
+          "</option>"
+        );
+      })
+      .join("");
+    var selected = state.selectedCategory;
+    var list = selected ? state.subcategories[selected] || [] : [];
+    var listHtml = "";
+    if (selected && list.length) {
+      listHtml =
+        '<ul class="subcategory-list">' +
+        list
+          .map(function (sub, idx) {
+            return (
+              '<li class="subcategory-item"><span>' +
+              escapeHtml(sub) +
+              '</span><div class="subcategory-actions">' +
+              '<button type="button" class="btn btn-ghost btn-sm" data-edit-subcategory-index="' +
+              idx +
+              '">Редактировать</button>' +
+              '<button type="button" class="btn btn-ghost btn-sm" data-delete-subcategory-index="' +
+              idx +
+              '">Удалить</button></div></li>'
+            );
+          })
+          .join("") +
+        "</ul>";
+    } else if (selected) {
+      listHtml = '<p class="stub-text">У этой категории пока нет подкатегорий.</p>';
+    } else {
+      listHtml = '<p class="stub-text">Выберите категорию.</p>';
+    }
+
+    return (
+      '<article class="stub-card">' +
+      '<h3 class="stub-title">Подкатегории</h3>' +
+      '<div class="field"><label class="label" for="subcategoryCategorySelect">Категория</label>' +
+      '<select id="subcategoryCategorySelect" class="input"><option value="">Выберите категорию</option>' +
+      options +
+      "</select></div>" +
+      '<div class="inline-form"><input id="newSubcategoryInput" class="input" type="text" placeholder="Название подкатегории" value="' +
+      escapeHtml(editName) +
+      '" />' +
+      '<button type="button" id="addSubcategoryBtn" class="btn btn-primary">' +
+      (edit ? "Сохранить изменения" : "Добавить подкатегорию") +
+      "</button>" +
+      (edit ? '<button type="button" id="cancelSubcategoryEdit" class="btn btn-ghost">Отмена</button>' : "") +
+      "</div>" +
+      '<div id="subcategoriesMessage"></div>' +
+      listHtml +
+      "</article>"
+    );
   }
 
   function renderProductsSection() {
-    const catOptions = state.categories
-      .map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`)
+    var editing = state.editingProductId
+      ? state.products.find(function (p) {
+          return p.id === state.editingProductId;
+        })
+      : null;
+    var formCat = editing ? editing.cat : "";
+    var formSub = editing ? editing.subcat || "" : "";
+    var catOptions = state.categories
+      .map(function (c) {
+        var sel = formCat === c ? " selected" : "";
+        return '<option value="' + escapeHtml(c) + '"' + sel + ">" + escapeHtml(c) + "</option>";
+      })
       .join("");
-    const rows = state.products
-      .map(
-        (p) => `
-      <tr>
-        <td>${escapeHtml(p.name)}</td>
-        <td>${escapeHtml(p.cat)}</td>
-        <td>${escapeHtml(String(p.price))}</td>
-        <td><button type="button" class="btn btn-ghost btn-sm" data-delete-product-id="${escapeHtml(p.id)}">Удалить</button></td>
-      </tr>`
-      )
+    var subOptions = buildSubcategoryOptionsHtml(formCat, formSub);
+    var subHint = !formCat
+      ? ""
+      : !(state.subcategories[formCat] || []).length
+        ? "У этой категории пока нет подкатегорий"
+        : "";
+    var rows = state.products
+      .map(function (p) {
+        return (
+          "<tr>" +
+          "<td>" + escapeHtml(p.name) + "</td>" +
+          "<td>" + escapeHtml(p.cat) + "</td>" +
+          "<td>" + escapeHtml(p.subcat || "—") + "</td>" +
+          "<td>" + escapeHtml(String(p.price)) + "</td>" +
+          '<td><button type="button" class="btn btn-ghost btn-sm" data-edit-product-id="' +
+          escapeHtml(p.id) +
+          '">Редактировать</button> ' +
+          '<button type="button" class="btn btn-ghost btn-sm" data-delete-product-id="' +
+          escapeHtml(p.id) +
+          '">Удалить</button></td></tr>'
+        );
+      })
       .join("");
 
-    return `
-      <article class="stub-card">
-        <h3 class="stub-title">Товары</h3>
-        <p class="stub-text">Тот же список, что на витрине (ключ localStorage: <code>${escapeHtml(
-          CATALOG_STORAGE_KEY
-        )}</code>).</p>
-        <div class="product-form-grid">
-          <div class="field">
-            <label class="label" for="productName">Название</label>
-            <input class="input" id="productName" type="text" placeholder="Например, Платье миди" />
-          </div>
-          <div class="field">
-            <label class="label" for="productCat">Категория</label>
-            <select class="input" id="productCat">
-              <option value="">Выберите категорию</option>
-              ${catOptions}
-            </select>
-          </div>
-          <div class="field">
-            <label class="label" for="productPrice">Цена (₽)</label>
-            <input class="input" id="productPrice" type="number" min="0" step="1" placeholder="4900" />
-          </div>
-          <div class="field field-span-2">
-            <label class="label" for="productDesc">Описание</label>
-            <input class="input" id="productDesc" type="text" placeholder="Краткое описание" />
-          </div>
-          <div class="field">
-            <label class="label" for="productImage">Фото (URL или путь)</label>
-            <input class="input" id="productImage" type="text" placeholder="images/item.jpg" />
-          </div>
-          <div class="field">
-            <label class="label" for="productVideo">Видео (необязательно)</label>
-            <input class="input" id="productVideo" type="text" placeholder="videos/item.mp4" />
-          </div>
-          <div class="field field-span-2">
-            <label class="label" for="productColors">Цвета (через запятую: red, #222 или названия)</label>
-            <input class="input" id="productColors" type="text" placeholder="pink, beige, black" />
-          </div>
-        </div>
-        <div class="btn-row">
-          <button type="button" id="addProductBtn" class="btn btn-primary">Добавить товар</button>
-        </div>
-        <div id="productsMessage"></div>
-        ${
-          state.products.length
-            ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Название</th><th>Категория</th><th>Цена</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
-            : '<p class="stub-text">Пока нет товаров — добавьте первый или откройте витрину для стартового набора.</p>'
-        }
-      </article>
-    `;
+    return (
+      '<article class="stub-card">' +
+      '<h3 class="stub-title">Товары</h3>' +
+      '<p class="stub-text">Общий каталог с витриной (ключ: <code>fashion_products</code>).</p>' +
+      '<div class="product-form-grid">' +
+      '<div class="field"><label class="label" for="productName">Название</label>' +
+      '<input class="input" id="productName" type="text" value="' + escapeHtml(editing ? editing.name : "") + '" placeholder="Например, Платье миди" /></div>' +
+      '<div class="field"><label class="label" for="productCat">Категория</label>' +
+      '<select class="input" id="productCat"><option value="">Выберите категорию</option>' + catOptions + '</select></div>' +
+      '<div class="field"><label class="label" for="productSubcat">Подкатегория</label>' +
+      '<select class="input" id="productSubcat" ' + (!formCat ? "disabled" : "") + '>' + subOptions + '</select>' +
+      '<p class="stub-text" id="productSubcatHint">' + escapeHtml(subHint) + '</p></div>' +
+      '<div class="field"><label class="label" for="productPrice">Цена (₽)</label>' +
+      '<input class="input" id="productPrice" type="number" min="0" step="1" value="' + escapeHtml(editing ? String(editing.price) : "") + '" placeholder="4900" /></div>' +
+      '<div class="field field-span-2"><label class="label" for="productDesc">Описание</label>' +
+      '<input class="input" id="productDesc" type="text" value="' + escapeHtml(editing ? editing.desc : "") + '" placeholder="Краткое описание" /></div>' +
+      '<div class="field"><label class="label" for="productImage">Фото (URL или путь)</label>' +
+      '<input class="input" id="productImage" type="text" value="' + escapeHtml(editing ? editing.image : "") + '" placeholder="images/item.jpg" /></div>' +
+      '<div class="field"><label class="label" for="productVideo">Видео (необязательно)</label>' +
+      '<input class="input" id="productVideo" type="text" value="' + escapeHtml(editing && editing.video ? editing.video : "") + '" placeholder="videos/item.mp4" /></div>' +
+      '<div class="field field-span-2"><label class="label" for="productColors">Цвета (через запятую)</label>' +
+      '<input class="input" id="productColors" type="text" value="' + escapeHtml(editing ? (editing.colors || []).join(", ") : "") + '" placeholder="pink, beige, black" /></div>' +
+      '<div class="field field-span-2"><label class="label" for="productSizes">Размеры (через запятую)</label>' +
+      '<input class="input" id="productSizes" type="text" value="' + escapeHtml(editing ? (editing.sizes || []).join(", ") : "S, M, L") + '" placeholder="S, M, L" /></div>' +
+      '</div>' +
+      '<div class="btn-row">' +
+      '<button type="button" id="addProductBtn" class="btn btn-primary">' + (editing ? "Сохранить изменения" : "Добавить товар") + '</button>' +
+      (editing ? '<button type="button" id="cancelProductEdit" class="btn btn-ghost">Отмена</button>' : "") +
+      '</div>' +
+      '<div id="productsMessage"></div>' +
+      (state.products.length
+        ? '<div class="table-wrap"><table class="data-table"><thead><tr><th>Название</th><th>Категория</th><th>Подкатегория</th><th>Цена</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+        : '<p class="stub-text">Пока нет товаров — добавьте первый или откройте витрину для стартового набора.</p>') +
+      '</article>'
+    );
+  }
+
+
+  function renderSettingsSection() {
+    var s = state.settings;
+    return (
+      '<article class="stub-card">' +
+      '<h3 class="stub-title">Настройки магазина</h3>' +
+      '<p class="stub-text">Эти данные отображаются на основном сайте.</p>' +
+      '<div class="product-form-grid">' +
+      '<div class="field"><label class="label" for="settingsStoreName">Название магазина</label>' +
+      '<input class="input" id="settingsStoreName" type="text" value="' + escapeHtml(s.storeName || "") + '" /></div>' +
+      '<div class="field"><label class="label" for="settingsTagline">Подзаголовок</label>' +
+      '<input class="input" id="settingsTagline" type="text" value="' + escapeHtml(s.tagline || "") + '" /></div>' +
+      '<div class="field"><label class="label" for="settingsTelegram">Telegram (без @)</label>' +
+      '<input class="input" id="settingsTelegram" type="text" value="' + escapeHtml(s.telegram || "") + '" /></div>' +
+      '<div class="field"><label class="label" for="settingsMax">MAX</label>' +
+      '<input class="input" id="settingsMax" type="text" value="' + escapeHtml(s.max || "") + '" placeholder="Ссылка или контакт" /></div>' +
+      '<div class="field"><label class="label" for="settingsPhone">Телефон</label>' +
+      '<input class="input" id="settingsPhone" type="text" value="' + escapeHtml(s.phone || "") + '" /></div>' +
+      '<div class="field field-span-2"><label class="label" for="settingsAddress">Адрес</label>' +
+      '<input class="input" id="settingsAddress" type="text" value="' + escapeHtml(s.address || "") + '" /></div>' +
+      '</div>' +
+      '<div class="btn-row"><button type="button" id="saveSettingsBtn" class="btn btn-primary">Сохранить настройки</button></div>' +
+      '<div id="settingsMessage"></div>' +
+      '</article>'
+    );
+  }
+
+  function bindSettingsEvents() {
+    var btn = document.getElementById("saveSettingsBtn");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      state.settings = {
+        storeName: document.getElementById("settingsStoreName").value.trim(),
+        tagline: document.getElementById("settingsTagline").value.trim(),
+        telegram: document.getElementById("settingsTelegram").value.trim(),
+        max: document.getElementById("settingsMax").value.trim(),
+        phone: document.getElementById("settingsPhone").value.trim(),
+        address: document.getElementById("settingsAddress").value.trim(),
+      };
+      persistSettings();
+      showSectionMessage("settingsMessage", "msg-success", "Настройки сохранены");
+    });
   }
 
   function bindAdminEvents() {
@@ -556,6 +678,7 @@ const STORAGE_KEYS = {
     if (state.currentSection === "categories") bindCategoriesEvents();
     if (state.currentSection === "subcategories") bindSubcategoriesEvents();
     if (state.currentSection === "products") bindProductsEvents();
+    if (state.currentSection === "settings") bindSettingsEvents();
   }
 
   function bindCategoriesEvents() {
@@ -592,8 +715,20 @@ const STORAGE_KEYS = {
       const category = deleteBtn.dataset.deleteCategory;
       state.categories = state.categories.filter((item) => item !== category);
       delete state.subcategories[category];
+      var hadOrphanProducts = false;
+      state.products = state.products.map(function (p) {
+        if (p.cat === category) {
+          hadOrphanProducts = true;
+          return normalizeProduct(Object.assign({}, p, { cat: "Без категории", subcat: "" }));
+        }
+        return p;
+      });
+      if (hadOrphanProducts && state.categories.indexOf("Без категории") === -1) {
+        state.categories.push("Без категории");
+      }
       if (state.selectedCategory === category) state.selectedCategory = "";
       persistCategories();
+      persistProducts();
       persistSubcategories();
       persistSelectedCategory();
       renderAdmin();
@@ -609,9 +744,11 @@ const STORAGE_KEYS = {
   }
 
   function bindSubcategoriesEvents() {
-    const select = document.getElementById("subcategoryCategorySelect");
-    const input = document.getElementById("newSubcategoryInput");
-    const addBtn = document.getElementById("addSubcategoryBtn");
+    var select = document.getElementById("subcategoryCategorySelect");
+    var input = document.getElementById("newSubcategoryInput");
+    var addBtn = document.getElementById("addSubcategoryBtn");
+    var cancelBtn = document.getElementById("cancelSubcategoryEdit");
+    var section = document.getElementById("sectionContent");
 
     select.addEventListener("change", function () {
       state.selectedCategory = select.value;
@@ -619,41 +756,147 @@ const STORAGE_KEYS = {
       renderAdmin();
     });
 
+    if (cancelBtn) {
+      cancelBtn.addEventListener("click", function () {
+        state.editingSubcategory = null;
+        renderAdmin();
+      });
+    }
+
     addBtn.addEventListener("click", function () {
-      const category = select.value;
-      const subcategory = input.value.trim();
+      var category = select.value;
+      var subcategory = input.value.trim();
       if (!category) {
         showSectionMessage("subcategoriesMessage", "msg-error", "Выберите категорию");
         return;
       }
       if (!subcategory) {
-        showSectionMessage("subcategoriesMessage", "msg-error", "Введите название категории");
+        showSectionMessage("subcategoriesMessage", "msg-error", "Введите название подкатегории");
         return;
       }
-      const bucket = state.subcategories[category] || [];
-      if (bucket.some((item) => item.toLowerCase() === subcategory.toLowerCase())) {
-        showSectionMessage("subcategoriesMessage", "msg-error", "Категория уже существует");
+
+      if (state.editingSubcategory) {
+        var edit = state.editingSubcategory;
+        var oldCat = edit.category;
+        var oldName = (state.subcategories[oldCat] || [])[edit.index];
+        var bucket = state.subcategories[category] || [];
+        var duplicate = bucket.some(function (item, i) {
+          if (category === oldCat && i === edit.index) return false;
+          return item.toLowerCase() === subcategory.toLowerCase();
+        });
+        if (duplicate) {
+          showSectionMessage("subcategoriesMessage", "msg-error", "Такая подкатегория уже есть в этой категории");
+          return;
+        }
+        if (oldCat !== category) {
+          var oldBucket = (state.subcategories[oldCat] || []).slice();
+          oldBucket.splice(edit.index, 1);
+          state.subcategories[oldCat] = oldBucket;
+          var newBucket = (state.subcategories[category] || []).slice();
+          newBucket.push(subcategory);
+          state.subcategories[category] = newBucket;
+        } else {
+          var updated = bucket.slice();
+          updated[edit.index] = subcategory;
+          state.subcategories[category] = updated;
+        }
+        syncProductsSubcategoryRename(oldCat, oldName, category, subcategory);
+        state.editingSubcategory = null;
+        state.selectedCategory = category;
+        persistSubcategories();
+        persistSelectedCategory();
+        persistProducts();
+        renderAdmin();
         return;
       }
-      state.subcategories[category] = [...bucket, subcategory];
+
+      var bucketNew = state.subcategories[category] || [];
+      if (bucketNew.some(function (item) { return item.toLowerCase() === subcategory.toLowerCase(); })) {
+        showSectionMessage("subcategoriesMessage", "msg-error", "Такая подкатегория уже есть в этой категории");
+        return;
+      }
+      state.subcategories[category] = bucketNew.concat([subcategory]);
       persistSubcategories();
+      renderAdmin();
+    });
+
+    section.addEventListener("click", function (event) {
+      var editBtn = event.target.closest("[data-edit-subcategory-index]");
+      if (editBtn) {
+        var idx = Number(editBtn.dataset.editSubcategoryIndex);
+        if (!state.selectedCategory || Number.isNaN(idx)) return;
+        state.editingSubcategory = { category: state.selectedCategory, index: idx };
+        renderAdmin();
+        return;
+      }
+      var delBtn = event.target.closest("[data-delete-subcategory-index]");
+      if (!delBtn) return;
+      var delIdx = Number(delBtn.dataset.deleteSubcategoryIndex);
+      if (!state.selectedCategory || Number.isNaN(delIdx)) return;
+      var cat = state.selectedCategory;
+      var name = (state.subcategories[cat] || [])[delIdx];
+      if (!name) return;
+      if (!window.confirm("Удалить подкатегорию?")) return;
+      if (productsUsingSubcategory(cat, name).length) {
+        if (!window.confirm("Эта подкатегория может использоваться в товарах. Всё равно удалить?")) return;
+      }
+      var arr = (state.subcategories[cat] || []).slice();
+      arr.splice(delIdx, 1);
+      state.subcategories[cat] = arr;
+      clearProductsSubcategory(cat, name);
+      if (state.editingSubcategory && state.editingSubcategory.category === cat) {
+        state.editingSubcategory = null;
+      }
+      persistSubcategories();
+      persistProducts();
       renderAdmin();
     });
   }
 
   function bindProductsEvents() {
-    const addBtn = document.getElementById("addProductBtn");
-    const section = document.getElementById("sectionContent");
+    var addBtn = document.getElementById("addProductBtn");
+    var cancelBtn = document.getElementById("cancelProductEdit");
+    var catSelect = document.getElementById("productCat");
+    var section = document.getElementById("sectionContent");
     if (!addBtn || !section) return;
 
+    function refreshSubcategorySelect(keepValue) {
+      var cat = catSelect.value;
+      var subSelect = document.getElementById("productSubcat");
+      var hint = document.getElementById("productSubcatHint");
+      if (!subSelect || !hint) return;
+      subSelect.innerHTML = buildSubcategoryOptionsHtml(cat, keepValue || "");
+      subSelect.disabled = !cat;
+      if (!cat) {
+        hint.textContent = "";
+      } else if (!(state.subcategories[cat] || []).length) {
+        hint.textContent = "У этой категории пока нет подкатегорий";
+      } else {
+        hint.textContent = "";
+      }
+    }
+
+    catSelect.addEventListener("change", function () {
+      refreshSubcategorySelect("");
+    });
+
+    if (cancelBtn) {
+      cancelBtn.addEventListener("click", function () {
+        state.editingProductId = null;
+        renderAdmin();
+      });
+    }
+
     addBtn.addEventListener("click", function () {
-      const name = document.getElementById("productName").value.trim();
-      const cat = document.getElementById("productCat").value.trim();
-      const priceRaw = document.getElementById("productPrice").value.trim();
-      const desc = document.getElementById("productDesc").value.trim();
-      const image = document.getElementById("productImage").value.trim();
-      const videoRaw = document.getElementById("productVideo").value.trim();
-      const colorsRaw = document.getElementById("productColors").value.trim();
+      var name = document.getElementById("productName").value.trim();
+      var cat = document.getElementById("productCat").value.trim();
+      var subcat = document.getElementById("productSubcat").value.trim();
+      var priceRaw = document.getElementById("productPrice").value.trim();
+      var desc = document.getElementById("productDesc").value.trim();
+      var image = document.getElementById("productImage").value.trim();
+      var videoRaw = document.getElementById("productVideo").value.trim();
+      var colorsRaw = document.getElementById("productColors").value.trim();
+      var sizesRaw = document.getElementById("productSizes").value.trim();
 
       if (!name) {
         showSectionMessage("productsMessage", "msg-error", "Введите название товара");
@@ -663,7 +906,7 @@ const STORAGE_KEYS = {
         showSectionMessage("productsMessage", "msg-error", "Выберите категорию");
         return;
       }
-      const price = Number(priceRaw);
+      var price = Number(priceRaw);
       if (!Number.isFinite(price) || price < 0) {
         showSectionMessage("productsMessage", "msg-error", "Укажите корректную цену");
         return;
@@ -673,55 +916,93 @@ const STORAGE_KEYS = {
         return;
       }
 
-      const colors = colorsRaw
-        ? colorsRaw.split(",").map((c) => c.trim()).filter(Boolean)
-        : ["#ccc"];
-      const draft = {
-        name,
-        cat,
-        price,
-        desc,
-        image,
+      var colors = colorsRaw ? colorsRaw.split(",").map(function (c) { return c.trim(); }).filter(Boolean) : ["#ccc"];
+      var sizes = sizesRaw ? sizesRaw.split(",").map(function (x) { return x.trim(); }).filter(Boolean) : ["S", "M", "L"];
+      var draft = {
+        name: name,
+        cat: cat,
+        subcat: subcat,
+        price: price,
+        desc: desc,
+        image: image,
         images: [image],
         video: videoRaw || null,
-        colors,
+        colors: colors,
+        sizes: sizes,
       };
-      const normalized = normalizeProduct(draft);
+
+      if (state.editingProductId) {
+        var idx = state.products.findIndex(function (p) { return p.id === state.editingProductId; });
+        if (idx === -1) return;
+        draft.id = state.editingProductId;
+        var normalizedEdit = normalizeProduct(draft);
+        if (!normalizedEdit) {
+          showSectionMessage("productsMessage", "msg-error", "Не удалось сохранить товар");
+          return;
+        }
+        var dupEdit = state.products.some(function (p, i) {
+          return i !== idx && p.name.toLowerCase() === normalizedEdit.name.toLowerCase() && p.cat === normalizedEdit.cat;
+        });
+        if (dupEdit) {
+          showSectionMessage("productsMessage", "msg-error", "Товар с таким названием уже есть в этой категории");
+          return;
+        }
+        var copy = state.products.slice();
+        copy[idx] = normalizedEdit;
+        state.products = copy;
+        state.editingProductId = null;
+        persistProducts();
+        renderAdmin();
+        return;
+      }
+
+      var normalized = normalizeProduct(draft);
       if (!normalized) {
         showSectionMessage("productsMessage", "msg-error", "Не удалось сохранить товар");
         return;
       }
-      const dup = state.products.some(
-        (p) => p.name.toLowerCase() === normalized.name.toLowerCase() && p.cat === normalized.cat
-      );
+      var dup = state.products.some(function (p) {
+        return p.name.toLowerCase() === normalized.name.toLowerCase() && p.cat === normalized.cat;
+      });
       if (dup) {
         showSectionMessage("productsMessage", "msg-error", "Товар с таким названием уже есть в этой категории");
         return;
       }
-      state.products = [...state.products, normalized];
+      state.products = state.products.concat([normalized]);
       persistProducts();
       renderAdmin();
     });
 
     section.addEventListener("click", function (event) {
-      const del = event.target.closest("[data-delete-product-id]");
+      var editBtn = event.target.closest("[data-edit-product-id]");
+      if (editBtn) {
+        state.editingProductId = editBtn.dataset.editProductId;
+        renderAdmin();
+        return;
+      }
+      var del = event.target.closest("[data-delete-product-id]");
       if (!del) return;
-      const id = del.dataset.deleteProductId;
-      state.products = state.products.filter((p) => p.id !== id);
+      var id = del.dataset.deleteProductId;
+      if (state.editingProductId === id) state.editingProductId = null;
+      state.products = state.products.filter(function (p) { return p.id !== id; });
       persistProducts();
       renderAdmin();
     });
   }
 
   function persistProducts() {
-    saveCatalogProducts(state.products);
+    state.products = Store.saveProducts(state.products);
+  }
+
+  function persistSettings() {
+    state.settings = Store.saveSettings(state.settings);
   }
 
   function initStorageDefaults() {
     writeIfMissing(STORAGE_KEYS.categories, DEFAULT_CATEGORIES);
     writeIfMissing(STORAGE_KEYS.subcategories, {});
     writeIfMissing(STORAGE_KEYS.selectedCategory, "");
-    writeIfMissing(STORAGE_KEYS.settings, {});
+    writeIfMissing(STORAGE_KEYS.settings, Store.DEFAULT_SETTINGS);
     writeIfMissing(STORAGE_KEYS.users, []);
     writeIfMissing(STORAGE_KEYS.stories, []);
     writeIfMissing(STORAGE_KEYS.currentSection, "dashboard");
@@ -730,15 +1011,19 @@ const STORAGE_KEYS = {
   function hydrateStateFromStorage() {
     state.isAuth = readAuth();
     state.owner = readObject(STORAGE_KEYS.owner, state.owner);
-    state.categories = readArray(STORAGE_KEYS.categories, DEFAULT_CATEGORIES);
-    state.subcategories = readObject(STORAGE_KEYS.subcategories, {});
     state.selectedCategory = readString(STORAGE_KEYS.selectedCategory, "");
-    state.settings = readObject(STORAGE_KEYS.settings, {});
     state.users = readArray(STORAGE_KEYS.users, []);
-    ensureCatalogStorageReady(defaultProductSeed);
-    state.products = loadCatalogProducts(defaultProductSeed);
-    if (!Array.isArray(state.products)) state.products = [];
-    state.stories = readArray(STORAGE_KEYS.stories, []);
+    Store.migrateStorage();
+    Store.ensureProductsSeed(defaultProductSeed);
+    state.categories = Store.loadCategories(DEFAULT_CATEGORIES);
+    state.subcategories = Store.loadSubcategories({});
+    var loadedProducts = Store.loadProducts(defaultProductSeed);
+    state.products = Array.isArray(loadedProducts) ? loadedProducts : [];
+    if (!state.products.length) {
+      state.products = defaultProductSeed.map(normalizeProduct).filter(Boolean);
+    }
+    state.settings = Store.loadSettings();
+    state.stories = Store.loadStories([]);
     state.currentSection = readString(STORAGE_KEYS.currentSection, "dashboard");
   }
 
@@ -786,11 +1071,11 @@ const STORAGE_KEYS = {
   }
 
   function persistCategories() {
-    localStorage.setItem(STORAGE_KEYS.categories, JSON.stringify(state.categories));
+    Store.saveCategories(state.categories);
   }
 
   function persistSubcategories() {
-    localStorage.setItem(STORAGE_KEYS.subcategories, JSON.stringify(state.subcategories));
+    Store.saveSubcategories(state.subcategories);
   }
 
   function persistSelectedCategory() {

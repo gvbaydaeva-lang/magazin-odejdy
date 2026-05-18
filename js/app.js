@@ -1,14 +1,18 @@
 import { products as defaultProducts } from "./products.js";
-import { TELEGRAM_USERNAME } from "./config.js";
 import {
-  ensureCatalogStorageReady,
-  loadCatalogProducts,
-  CATALOG_STORAGE_KEY,
-} from "./catalog.js";
+  STORAGE_KEYS,
+  migrateStorage,
+  ensureProductsSeed,
+  loadProductsForStorefront,
+  loadCategories,
+  loadSettings,
+} from "./store.js";
 
 let selectedCat = "Все";
 const cart = [];
 let catalogProducts = [];
+let storeCategories = [];
+let storeSettings = {};
 let productAfterVideo = null;
 
 const $ = (id) => document.getElementById(id);
@@ -19,7 +23,10 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function categoryFiltersFromCatalog() {
+function categoryFiltersFromStorage() {
+  if (storeCategories.length) {
+    return ["Все", ...storeCategories.slice().sort((a, b) => a.localeCompare(b, "ru"))];
+  }
   const set = new Set();
   catalogProducts.forEach((p) => {
     if (p.cat) set.add(p.cat);
@@ -27,10 +34,18 @@ function categoryFiltersFromCatalog() {
   return ["Все", ...Array.from(set).sort((a, b) => a.localeCompare(b, "ru"))];
 }
 
+function applyStoreSettings() {
+  const nameEl = $("storeName");
+  const taglineEl = $("storeTagline");
+  if (nameEl && storeSettings.storeName) nameEl.textContent = storeSettings.storeName;
+  if (taglineEl && storeSettings.tagline) taglineEl.textContent = storeSettings.tagline;
+  document.title = storeSettings.storeName || "Fashion Store";
+}
+
 function renderCategories() {
   const container = $("categories");
   container.innerHTML = "";
-  const chips = categoryFiltersFromCatalog();
+  const chips = categoryFiltersFromStorage();
   chips.forEach((c) => {
     const b = document.createElement("button");
     b.textContent = c;
@@ -78,6 +93,10 @@ function renderProducts() {
       const title = document.createElement("h4");
       title.textContent = p.name;
 
+      const meta = document.createElement("div");
+      meta.className = "product-meta";
+      meta.textContent = p.subcat ? `${p.cat} · ${p.subcat}` : p.cat;
+
       const price = document.createElement("div");
       price.textContent = `${p.price} ₽`;
 
@@ -92,6 +111,7 @@ function renderProducts() {
 
       div.appendChild(imgWrap);
       div.appendChild(title);
+      div.appendChild(meta);
       div.appendChild(price);
       div.appendChild(colors);
 
@@ -142,9 +162,10 @@ function renderCart() {
   cart.forEach((i, idx) => {
     total += i.price;
     const el = document.createElement("div");
-    el.innerHTML = `${escapeHtml(i.name)} (${escapeHtml(i.size)}, ${escapeHtml(
-      i.color
-    )}) - ${i.price} ₽ `;
+    const sub = i.subcat ? `, ${i.subcat}` : "";
+    el.innerHTML = `${escapeHtml(i.name)} (${escapeHtml(i.cat)}${escapeHtml(sub)}, ${escapeHtml(
+      i.size
+    )}, ${escapeHtml(i.color)}) - ${i.price} ₽ `;
     const btn = document.createElement("button");
     btn.type = "button";
     btn.textContent = "❌";
@@ -159,24 +180,29 @@ function renderCart() {
 function generateOrderPayload() {
   let t = "Заказ:\n";
   cart.forEach((i) => {
-    t += `${i.name} (${i.size}, ${i.color}) - ${i.price}₽\n`;
+    const sub = i.subcat ? `, ${i.subcat}` : "";
+    t += `${i.name} (${i.cat}${sub}, ${i.size}, ${i.color}) - ${i.price}₽\n`;
   });
   t += `\nИтого: ${$("total").textContent}₽\n`;
   t += $("action").value === "order" ? "Оформить заказ\n" : "Вопрос\n";
   t += "Комментарий: " + $("comment").value;
+  if (storeSettings.phone) t += `\nТелефон: ${storeSettings.phone}`;
+  if (storeSettings.address) t += `\nАдрес: ${storeSettings.address}`;
   return t;
 }
 
 function sendTelegram() {
+  const username = (storeSettings.telegram || "USERNAME").replace(/^@/, "");
   const text = encodeURIComponent(generateOrderPayload());
-  window.open(`https://t.me/${TELEGRAM_USERNAME}?text=${text}`);
+  window.open(`https://t.me/${username}?text=${text}`);
 }
 
 async function copyOrder() {
   const text = generateOrderPayload();
+  const maxContact = storeSettings.max || "";
   try {
-    await navigator.clipboard.writeText(text);
-    alert("Скопировано. Отправьте в MAX");
+    await navigator.clipboard.writeText(text + (maxContact ? `\n\nMAX: ${maxContact}` : ""));
+    alert(maxContact ? "Скопировано. Отправьте в MAX" : "Скопировано. Отправьте в MAX");
   } catch {
     alert("Не удалось скопировать в буфер обмена");
   }
@@ -189,16 +215,20 @@ function openProductModal(p) {
   let color = null;
   const gallery = Array.isArray(p.images) && p.images.length ? p.images : [p.image];
   let activeImage = gallery[0];
+  const sizes = Array.isArray(p.sizes) && p.sizes.length ? p.sizes : ["S", "M", "L"];
 
   function renderModal() {
+    const subLine = p.subcat
+      ? `<p class="product-meta-modal">Категория: ${escapeHtml(p.cat)} · Подкатегория: ${escapeHtml(p.subcat)}</p>`
+      : `<p class="product-meta-modal">Категория: ${escapeHtml(p.cat)}</p>`;
+
     content.innerHTML = `
       <h3>${escapeHtml(p.name)}</h3>
       <p>${escapeHtml(p.desc)}</p>
+      ${subLine}
       <b>${p.price} ₽</b>
       <div class="modal-media">
-        <img class="modal-main-image" src="${escapeHtml(activeImage)}" alt="${escapeHtml(
-      p.name
-    )}">
+        <img class="modal-main-image" src="${escapeHtml(activeImage)}" alt="${escapeHtml(p.name)}">
         ${
           p.video
             ? '<button type="button" class="media-btn" data-action="watch-video">Смотреть видео</button>'
@@ -230,7 +260,7 @@ function openProductModal(p) {
     });
 
     const sizesEl = content.querySelector("#modalSizes");
-    ["S", "M", "L"].forEach((s) => {
+    sizes.forEach((s) => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = size === s ? "selected" : "";
@@ -294,9 +324,13 @@ function openProductModal(p) {
 }
 
 function reloadCatalogFromStorage() {
-  ensureCatalogStorageReady(defaultProducts);
-  catalogProducts = loadCatalogProducts(defaultProducts);
-  if (!categoryFiltersFromCatalog().includes(selectedCat)) {
+  migrateStorage();
+  ensureProductsSeed(defaultProducts);
+  storeSettings = loadSettings();
+  storeCategories = loadCategories([]);
+  catalogProducts = loadProductsForStorefront(defaultProducts);
+  applyStoreSettings();
+  if (!categoryFiltersFromStorage().includes(selectedCat)) {
     selectedCat = "Все";
   }
   renderCategories();
@@ -307,16 +341,15 @@ function init() {
   reloadCatalogFromStorage();
   renderCart();
 
+  const storageKeys = Object.values(STORAGE_KEYS);
   window.addEventListener("storage", (e) => {
-    if (e.key === CATALOG_STORAGE_KEY) {
+    if (storageKeys.includes(e.key)) {
       reloadCatalogFromStorage();
       renderCart();
     }
   });
 
-  $("videoModal")
-    .querySelector(".close")
-    .addEventListener("click", closeVideoModal);
+  $("videoModal").querySelector(".close").addEventListener("click", closeVideoModal);
 
   $("cartItems").addEventListener("click", (e) => {
     const btn = e.target.closest("[data-remove-index]");
