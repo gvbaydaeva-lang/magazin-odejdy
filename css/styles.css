@@ -346,6 +346,28 @@ select {
   color: #7b706b;
 }
 
+.admin-demo-link {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 900;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid #cbb39a;
+  background: rgba(255, 250, 244, 0.95);
+  color: #5c4831;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: 0 2px 8px rgba(60, 40, 30, 0.12);
+}
+
+.admin-demo-link:hover {
+  background: #6c4831;
+  color: #f8efe5;
+  border-color: #6c4831;
+}
+
 @media (max-width: 640px) {
   .banner {
     min-height: 180px;
