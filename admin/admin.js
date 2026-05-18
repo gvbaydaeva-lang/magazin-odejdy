@@ -1007,9 +1007,29 @@
 
   function closeProductDetailModal() {
     var modal = document.getElementById("productDetailModal");
+    var body = document.getElementById("productDetailModalBody");
     if (!modal) return;
     modal.classList.remove("is-open");
     modal.setAttribute("aria-hidden", "true");
+    if (body) body.innerHTML = "";
+  }
+
+  function bindProductDetailModalEvents() {
+    if (document.body.dataset.productDetailModalBound) return;
+    document.body.dataset.productDetailModalBound = "1";
+    document.addEventListener("click", function (event) {
+      var modal = document.getElementById("productDetailModal");
+      if (!modal || !modal.classList.contains("is-open")) return;
+      if (event.target.closest("[data-close-product-detail]")) {
+        event.preventDefault();
+        closeProductDetailModal();
+      }
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key !== "Escape") return;
+      var modal = document.getElementById("productDetailModal");
+      if (modal && modal.classList.contains("is-open")) closeProductDetailModal();
+    });
   }
   function readFileAsDataURL(file, maxBytes, done) {
     if (!file) {
@@ -1455,6 +1475,8 @@
     var section = document.getElementById("sectionContent");
     if (!section) return;
 
+    bindProductDetailModalEvents();
+
     if (!section.dataset.productsListBound) {
       section.dataset.productsListBound = "1";
       section.addEventListener("click", function (event) {
@@ -1560,8 +1582,7 @@
       state.productFormDraftVariants = map;
     }
 
-    function refreshProductVariantFields() {
-      mergeVariantsFromDom();
+    function renderVariantFieldsFromDraft() {
       var selected = collectSelectedColors();
       var map = state.productFormDraftVariants || {};
       Object.keys(map).forEach(function (c) {
@@ -1574,6 +1595,11 @@
       var wrap = document.getElementById("productVariantFields");
       if (!wrap) return;
       wrap.innerHTML = buildVariantFieldsHtml(selected, map);
+    }
+
+    function refreshProductVariantFields() {
+      mergeVariantsFromDom();
+      renderVariantFieldsFromDraft();
     }
 
     function collectVariantsFromForm() {
@@ -1609,22 +1635,37 @@
 
     wirePickerToggle("productColorsPicker", refreshProductVariantFields);
 
-    var variantFields = document.getElementById("productVariantFields");
-    if (variantFields && !variantFields.dataset.bound) {
-      variantFields.dataset.bound = "1";
-      variantFields.addEventListener("click", function (event) {
+    if (!section.dataset.variantFieldsBound) {
+      section.dataset.variantFieldsBound = "1";
+      section.addEventListener("click", function (event) {
+        if (!document.getElementById("productVariantFields")) return;
         var addBtn = event.target.closest(".variant-add-size");
         if (addBtn) {
+          event.preventDefault();
           mergeVariantsFromDom();
           var colorAdd = addBtn.dataset.variantColor;
+          if (!colorAdd) return;
           var entryAdd = state.productFormDraftVariants[colorAdd] || { rows: [] };
           entryAdd.rows.push({ size: "", stock: 0 });
           state.productFormDraftVariants[colorAdd] = entryAdd;
-          refreshProductVariantFields();
+          renderVariantFieldsFromDraft();
+          var card = null;
+          var cards = document.querySelectorAll(".variant-card");
+          for (var ci = 0; ci < cards.length; ci++) {
+            if (cards[ci].dataset.variantColor === colorAdd) {
+              card = cards[ci];
+              break;
+            }
+          }
+          if (card) {
+            var lastSizeInput = card.querySelector(".variant-size-row:last-child .variant-size-input");
+            if (lastSizeInput) lastSizeInput.focus();
+          }
           return;
         }
         var removeBtn = event.target.closest(".variant-remove-row");
         if (removeBtn) {
+          event.preventDefault();
           mergeVariantsFromDom();
           var colorRem = removeBtn.dataset.variantColor;
           var block = removeBtn.closest(".variant-card");
@@ -1639,20 +1680,7 @@
             }
           }
           state.productFormDraftVariants[colorRem] = entryRem;
-          refreshProductVariantFields();
-        }
-      });
-    }
-
-    var detailModal = document.getElementById("productDetailModal");
-    if (detailModal && !detailModal.dataset.bound) {
-      detailModal.dataset.bound = "1";
-      detailModal.addEventListener("click", function (event) {
-        if (event.target.closest("[data-close-product-detail]")) closeProductDetailModal();
-      });
-      document.addEventListener("keydown", function (event) {
-        if (event.key === "Escape" && detailModal.classList.contains("is-open")) {
-          closeProductDetailModal();
+          renderVariantFieldsFromDraft();
         }
       });
     }
