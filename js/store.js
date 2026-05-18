@@ -87,6 +87,37 @@ export function isStorefrontProduct(product) {
   return product.published === true && images.length > 0;
 }
 
+export function normalizeStock(raw, sizes = []) {
+  const stock = {};
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    Object.keys(raw).forEach((key) => {
+      const n = Number(raw[key]);
+      if (Number.isFinite(n) && n >= 0) stock[String(key)] = Math.floor(n);
+    });
+  }
+  if (!Array.isArray(sizes) || !sizes.length) return stock;
+  const pruned = {};
+  sizes.forEach((size) => {
+    if (stock[size] !== undefined) pruned[size] = stock[size];
+  });
+  return pruned;
+}
+
+/** Размеры, доступные для заказа на витрине (остаток > 0 или остатки не заданы). */
+export function getSelectableSizes(product) {
+  const sizes = Array.isArray(product?.sizes) ? product.sizes : [];
+  const stock =
+    product?.stock && typeof product.stock === "object" && !Array.isArray(product.stock)
+      ? product.stock
+      : {};
+  const hasStockData = sizes.some((s) => stock[s] !== undefined);
+  if (!hasStockData) return sizes;
+  return sizes.filter((s) => {
+    const qty = stock[s];
+    return qty !== undefined && qty > 0;
+  });
+}
+
 export function normalizeCategory(raw) {
   if (typeof raw === "string") {
     const name = raw.trim();
@@ -180,6 +211,7 @@ export function normalizeProduct(raw) {
         ? [image]
         : [];
   const published = images.length > 0;
+  const stock = normalizeStock(raw.stock, sizes);
   const id = raw.id ? String(raw.id) : stableId();
   return {
     id,
@@ -193,6 +225,7 @@ export function normalizeProduct(raw) {
     video,
     colors,
     sizes,
+    stock,
     published,
   };
 }

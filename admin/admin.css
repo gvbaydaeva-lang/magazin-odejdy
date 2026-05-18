@@ -701,3 +701,65 @@ input {
 .product-row-status {
   margin-top: 6px;
 }
+
+.products-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.products-page-header .stub-title {
+  margin: 0;
+}
+
+.product-form-panel {
+  display: none;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fffdfb;
+}
+
+.product-form-panel.is-open {
+  display: block;
+}
+
+.products-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.products-table {
+  width: 100%;
+  min-width: 960px;
+}
+
+.products-actions-cell {
+  white-space: nowrap;
+}
+
+.stock-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.stock-line {
+  display: block;
+}
+
+.stock-cell-muted {
+  color: #7b706b;
+  font-size: 12px;
+}
+
+.stock-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+}

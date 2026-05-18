@@ -93,6 +93,39 @@
     return product.published === true && images.length > 0;
   }
 
+  function normalizeStock(raw, sizes) {
+    var stock = {};
+    var sizeList = Array.isArray(sizes) ? sizes : [];
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      Object.keys(raw).forEach(function (key) {
+        var n = Number(raw[key]);
+        if (Number.isFinite(n) && n >= 0) stock[String(key)] = Math.floor(n);
+      });
+    }
+    if (!sizeList.length) return stock;
+    var pruned = {};
+    sizeList.forEach(function (size) {
+      if (stock[size] !== undefined) pruned[size] = stock[size];
+    });
+    return pruned;
+  }
+
+  function getSelectableSizes(product) {
+    var sizes = Array.isArray(product && product.sizes) ? product.sizes : [];
+    var stock =
+      product && product.stock && typeof product.stock === "object" && !Array.isArray(product.stock)
+        ? product.stock
+        : {};
+    var hasStockData = sizes.some(function (s) {
+      return stock[s] !== undefined;
+    });
+    if (!hasStockData) return sizes;
+    return sizes.filter(function (s) {
+      var qty = stock[s];
+      return qty !== undefined && qty > 0;
+    });
+  }
+
   function normalizeCategory(raw) {
     if (typeof raw === "string") {
       var nameStr = raw.trim();
@@ -255,6 +288,7 @@
           ? [image]
           : [];
     var published = images.length > 0;
+    var stock = normalizeStock(raw.stock, sizes);
     var id = raw.id ? String(raw.id) : stableId();
     return {
       id: id,
@@ -268,6 +302,7 @@
       video: video,
       colors: colors,
       sizes: sizes,
+      stock: stock,
       published: published,
     };
   }
@@ -359,6 +394,8 @@
     COLOR_HEX: COLOR_HEX,
     colorToCss: colorToCss,
     isStorefrontProduct: isStorefrontProduct,
+    normalizeStock: normalizeStock,
+    getSelectableSizes: getSelectableSizes,
     normalizeCategory: normalizeCategory,
     normalizeCategoriesList: normalizeCategoriesList,
     getCategoryName: getCategoryName,

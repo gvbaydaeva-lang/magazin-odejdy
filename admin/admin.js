@@ -90,8 +90,10 @@
     editingSubcategory: null,
     editingProductId: null,
     categoriesSearchQuery: "",
+    productFormOpen: false,
     productDraftMedia: { image: null, video: null, imageName: "", videoName: "" },
     productFormCustomColors: [],
+    productFormDraftStock: {},
     lastEditingProductId: undefined,
   };
 
@@ -626,11 +628,13 @@
     state.lastEditingProductId = key;
     state.productDraftMedia = { image: null, video: null, imageName: "", videoName: "" };
     state.productFormCustomColors = [];
+    state.productFormDraftStock = {};
     if (!state.editingProductId) return;
     var editing = state.products.find(function (p) {
       return p.id === state.editingProductId;
     });
     if (!editing) return;
+    state.productFormDraftStock = Object.assign({}, editing.stock || {});
     var presetLower = {};
     PRESET_COLORS.forEach(function (c) {
       presetLower[c.toLowerCase()] = true;
@@ -775,6 +779,82 @@
     return presetHtml + customHtml;
   }
 
+  function isProductFormVisible() {
+    return Boolean(state.productFormOpen || state.editingProductId);
+  }
+
+  function closeProductForm() {
+    state.productFormOpen = false;
+    state.editingProductId = null;
+    state.lastEditingProductId = undefined;
+    state.productFormDraftStock = {};
+  }
+
+  function openProductFormForNew() {
+    state.productFormOpen = true;
+    state.editingProductId = null;
+    state.lastEditingProductId = undefined;
+    state.productFormDraftStock = {};
+    state.productFormCustomColors = [];
+    state.productDraftMedia = { image: null, video: null, imageName: "", videoName: "" };
+  }
+
+  function renderStockTableCell(product) {
+    var sizes = product.sizes || [];
+    var stock = product.stock || {};
+    if (!sizes.length) {
+      return '<span class="stock-cell-muted">—</span>';
+    }
+    var lines = sizes
+      .map(function (size) {
+        if (stock[size] === undefined) return null;
+        return (
+          '<span class="stock-line"><b>' +
+          escapeHtml(size) +
+          ":</b> " +
+          escapeHtml(String(stock[size])) +
+          "</span>"
+        );
+      })
+      .filter(Boolean);
+    if (!lines.length) {
+      return '<span class="stock-cell-muted">Не указаны</span>';
+    }
+    return '<div class="stock-cell">' + lines.join("") + "</div>";
+  }
+
+  function buildStockFieldsHtml(sizes, stock) {
+    if (!sizes.length) {
+      return '<p class="stub-text">Сначала выберите размеры выше.</p>';
+    }
+    var stockMap = stock && typeof stock === "object" ? stock : {};
+    return (
+      '<div class="stock-fields-grid">' +
+      sizes
+        .map(function (size) {
+          var val = stockMap[size] !== undefined ? String(stockMap[size]) : "";
+          return (
+            '<div class="field stock-field">' +
+            '<label class="label" for="stock_' +
+            escapeHtml(size) +
+            '">Остаток ' +
+            escapeHtml(size) +
+            "</label>" +
+            '<input class="input product-stock-input" id="stock_' +
+            escapeHtml(size) +
+            '" type="number" min="0" step="1" data-stock-size="' +
+            escapeHtml(size) +
+            '" value="' +
+            escapeHtml(val) +
+            '" placeholder="0" />' +
+            "</div>"
+          );
+        })
+        .join("") +
+      "</div>"
+    );
+  }
+
   function readFileAsDataURL(file, maxBytes, done) {
     if (!file) {
       done(new Error("Файл не выбран"));
@@ -801,6 +881,7 @@
   function renderProductsSection() {
     syncProductFormSession();
     var editing = getEditingProduct();
+    var showForm = isProductFormVisible();
     var formCat = editing ? editing.cat : "";
     var formSub = editing ? editing.subcat || "" : "";
     var catOptions = state.categories
@@ -823,6 +904,7 @@
     var imageHint = state.productDraftMedia.imageName || (previewImage ? "Фото загружено" : "");
     var videoHint =
       state.productDraftMedia.videoName || (previewVideo ? "Видео загружено" : "Видео не выбрано");
+    var stockForForm = editing ? editing.stock || {} : state.productFormDraftStock || {};
 
     var rows = state.products
       .map(function (p) {
@@ -832,17 +914,20 @@
             : '<span class="product-thumb product-thumb-empty">нет фото</span>';
         var status = p.published
           ? '<span class="badge badge-success">На витрине</span>'
-          : '<span class="badge badge-warn">Не опубликован на витрине: добавьте фото</span>';
+          : '<span class="badge badge-warn">Не на витрине</span>';
         return (
           "<tr>" +
           "<td>" + thumb + "</td>" +
-          "<td>" + escapeHtml(p.name) + '<div class="product-row-status">' + status + "</div></td>" +
+          "<td>" + escapeHtml(p.name) + "</td>" +
           "<td>" + escapeHtml(p.cat) + "</td>" +
           "<td>" + escapeHtml(p.subcat || "—") + "</td>" +
           "<td>" + renderBadgeList(p.sizes, "badge-size") + "</td>" +
           "<td>" + renderColorBadgesAdmin(p.colors) + "</td>" +
+          "<td>" + renderStockTableCell(p) + "</td>" +
           "<td>" + escapeHtml(String(p.price)) + " ₽</td>" +
-          '<td><button type="button" class="btn btn-ghost btn-sm" data-edit-product-id="' +
+          "<td>" + status + "</td>" +
+          '<td class="products-actions-cell">' +
+          '<button type="button" class="btn btn-ghost btn-sm" data-edit-product-id="' +
           escapeHtml(p.id) +
           '">Редактировать</button> ' +
           '<button type="button" class="btn btn-ghost btn-sm" data-delete-product-id="' +
@@ -852,70 +937,114 @@
       })
       .join("");
 
+    var formPanel =
+      showForm
+        ? '<div id="productFormPanel" class="product-form-panel is-open">' +
+          '<div class="product-form-grid">' +
+          '<div class="field"><label class="label" for="productName">Название</label>' +
+          '<input class="input" id="productName" type="text" value="' +
+          escapeHtml(editing ? editing.name : "") +
+          '" placeholder="Например, Платье миди" /></div>' +
+          '<div class="field"><label class="label" for="productCat">Категория</label>' +
+          '<select class="input" id="productCat"><option value="">Выберите категорию</option>' +
+          catOptions +
+          "</select></div>" +
+          '<div class="field"><label class="label" for="productSubcat">Подкатегория</label>' +
+          '<select class="input" id="productSubcat" ' +
+          (!formCat ? "disabled" : "") +
+          ">" +
+          subOptions +
+          '</select><p class="stub-text" id="productSubcatHint">' +
+          escapeHtml(subHint) +
+          "</p></div>" +
+          '<div class="field"><label class="label" for="productPrice">Цена (₽)</label>' +
+          '<input class="input" id="productPrice" type="number" min="0" step="1" value="' +
+          escapeHtml(editing ? String(editing.price) : "") +
+          '" placeholder="4900" /></div>' +
+          '<div class="field field-span-2"><label class="label" for="productDesc">Описание</label>' +
+          '<input class="input" id="productDesc" type="text" value="' +
+          escapeHtml(editing ? editing.desc : "") +
+          '" placeholder="Краткое описание" /></div>' +
+          '<div class="field field-span-2 media-field"><label class="label">Фото товара</label>' +
+          '<input type="file" id="productImageFile" accept="image/*" hidden />' +
+          '<div class="media-actions">' +
+          '<button type="button" class="btn btn-ghost" id="productImagePickBtn">Загрузить фото</button>' +
+          '<button type="button" class="btn btn-ghost" id="productImageClearBtn">Удалить фото</button>' +
+          "</div>" +
+          '<p class="stub-text" id="productImageHint">' +
+          escapeHtml(imageHint) +
+          "</p>" +
+          (previewImage
+            ? '<img class="media-preview" id="productImagePreview" src="' +
+              escapeHtml(previewImage) +
+              '" alt="Превью" />'
+            : '<div class="media-preview media-preview-empty" id="productImagePreview">Превью появится после загрузки</div>') +
+          "</div>" +
+          '<div class="field field-span-2 media-field"><label class="label">Видео товара (необязательно)</label>' +
+          '<input type="file" id="productVideoFile" accept="video/mp4,video/*" hidden />' +
+          '<div class="media-actions">' +
+          '<button type="button" class="btn btn-ghost" id="productVideoPickBtn">Загрузить видео</button>' +
+          '<button type="button" class="btn btn-ghost" id="productVideoClearBtn">Удалить видео</button>' +
+          "</div>" +
+          '<p class="stub-text" id="productVideoHint">' +
+          escapeHtml(videoHint) +
+          "</p>" +
+          (previewVideo
+            ? '<video class="media-preview-video" id="productVideoPreview" controls playsinline src="' +
+              escapeHtml(previewVideo) +
+              '"></video>'
+            : "") +
+          "</div>" +
+          '<div class="field field-span-2"><label class="label">Размеры</label>' +
+          '<div class="picker-group" id="productSizesPicker">' +
+          buildSizePickerHtml(editing ? editing.sizes || [] : []) +
+          "</div></div>" +
+          '<div class="field field-span-2"><label class="label">Остатки по размерам</label>' +
+          '<div id="productStockFields">' +
+          buildStockFieldsHtml(editing ? editing.sizes || [] : [], stockForForm) +
+          "</div></div>" +
+          '<div class="field field-span-2"><label class="label">Цвета</label>' +
+          '<div class="picker-group" id="productColorsPicker">' +
+          buildColorPickerHtml(selectedColors, state.productFormCustomColors) +
+          "</div>" +
+          '<div class="inline-form custom-color-form">' +
+          '<input class="input" id="productCustomColorInput" type="text" placeholder="Добавить свой цвет" />' +
+          '<button type="button" class="btn btn-ghost" id="productAddCustomColorBtn">Добавить</button>' +
+          "</div></div>" +
+          '<div class="btn-row">' +
+          '<button type="button" id="saveProductBtn" class="btn btn-primary">' +
+          (editing ? "Сохранить изменения" : "Сохранить товар") +
+          "</button>" +
+          (editing
+            ? '<button type="button" id="cancelProductEdit" class="btn btn-ghost">Отмена</button>'
+            : "") +
+          "</div>" +
+          "</div>"
+        : "";
+
     return (
-      '<article class="stub-card">' +
+      '<article class="stub-card products-page">' +
+      '<div class="products-page-header">' +
       '<h3 class="stub-title">Товары</h3>' +
-      '<p class="stub-text">Общий каталог с витриной (ключ: <code>fashion_products</code>). Без фото товар сохраняется, но на сайте не показывается.</p>' +
-      '<div class="product-form-grid">' +
-      '<div class="field"><label class="label" for="productName">Название</label>' +
-      '<input class="input" id="productName" type="text" value="' + escapeHtml(editing ? editing.name : "") + '" placeholder="Например, Платье миди" /></div>' +
-      '<div class="field"><label class="label" for="productCat">Категория</label>' +
-      '<select class="input" id="productCat"><option value="">Выберите категорию</option>' + catOptions + '</select></div>' +
-      '<div class="field"><label class="label" for="productSubcat">Подкатегория</label>' +
-      '<select class="input" id="productSubcat" ' + (!formCat ? "disabled" : "") + '>' + subOptions + '</select>' +
-      '<p class="stub-text" id="productSubcatHint">' + escapeHtml(subHint) + '</p></div>' +
-      '<div class="field"><label class="label" for="productPrice">Цена (₽)</label>' +
-      '<input class="input" id="productPrice" type="number" min="0" step="1" value="' + escapeHtml(editing ? String(editing.price) : "") + '" placeholder="4900" /></div>' +
-      '<div class="field field-span-2"><label class="label" for="productDesc">Описание</label>' +
-      '<input class="input" id="productDesc" type="text" value="' + escapeHtml(editing ? editing.desc : "") + '" placeholder="Краткое описание" /></div>' +
-      '<div class="field field-span-2 media-field"><label class="label">Фото товара</label>' +
-      '<input type="file" id="productImageFile" accept="image/*" hidden />' +
-      '<div class="media-actions">' +
-      '<button type="button" class="btn btn-ghost" id="productImagePickBtn">Загрузить фото</button>' +
-      '<button type="button" class="btn btn-ghost" id="productImageClearBtn">Удалить фото</button>' +
+      '<button type="button" id="toggleProductFormBtn" class="btn btn-primary">' +
+      (showForm ? "Скрыть" : "+ Добавить товар") +
+      "</button>" +
       "</div>" +
-      '<p class="stub-text" id="productImageHint">' + escapeHtml(imageHint) + "</p>" +
-      (previewImage
-        ? '<img class="media-preview" id="productImagePreview" src="' + escapeHtml(previewImage) + '" alt="Превью" />'
-        : '<div class="media-preview media-preview-empty" id="productImagePreview">Превью появится после загрузки</div>') +
-      "</div>" +
-      '<div class="field field-span-2 media-field"><label class="label">Видео товара (необязательно)</label>' +
-      '<input type="file" id="productVideoFile" accept="video/mp4,video/*" hidden />' +
-      '<div class="media-actions">' +
-      '<button type="button" class="btn btn-ghost" id="productVideoPickBtn">Загрузить видео</button>' +
-      '<button type="button" class="btn btn-ghost" id="productVideoClearBtn">Удалить видео</button>' +
-      "</div>" +
-      '<p class="stub-text" id="productVideoHint">' + escapeHtml(videoHint) + "</p>" +
-      (previewVideo
-        ? '<video class="media-preview-video" id="productVideoPreview" controls playsinline src="' +
-          escapeHtml(previewVideo) +
-          '"></video>'
-        : "") +
-      "</div>" +
-      '<div class="field field-span-2"><label class="label">Размеры</label>' +
-      '<div class="picker-group" id="productSizesPicker">' +
-      buildSizePickerHtml(selectedSizes) +
-      "</div></div>" +
-      '<div class="field field-span-2"><label class="label">Цвета</label>' +
-      '<div class="picker-group" id="productColorsPicker">' +
-      buildColorPickerHtml(selectedColors, state.productFormCustomColors) +
-      "</div>" +
-      '<div class="inline-form custom-color-form">' +
-      '<input class="input" id="productCustomColorInput" type="text" placeholder="Добавить свой цвет" />' +
-      '<button type="button" class="btn btn-ghost" id="productAddCustomColorBtn">Добавить</button>' +
-      "</div></div>" +
-      '<div class="btn-row">' +
-      '<button type="button" id="addProductBtn" class="btn btn-primary">' + (editing ? "Сохранить изменения" : "Добавить товар") + '</button>' +
-      (editing ? '<button type="button" id="cancelProductEdit" class="btn btn-ghost">Отмена</button>' : "") +
-      '</div>' +
       '<div id="productsMessage"></div>' +
+      formPanel +
+      '<div class="table-wrap products-table-wrap">' +
       (state.products.length
-        ? '<div class="table-wrap"><table class="data-table"><thead><tr><th>Фото</th><th>Название</th><th>Категория</th><th>Подкатегория</th><th>Размеры</th><th>Цвета</th><th>Цена</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
-        : '<p class="stub-text">Пока нет товаров — добавьте первый или откройте витрину для стартового набора.</p>') +
-      '</article>'
+        ? '<table class="data-table products-table"><thead><tr>' +
+          "<th>Фото</th><th>Название</th><th>Категория</th><th>Подкатегория</th>" +
+          "<th>Размеры</th><th>Цвета</th><th>Остатки</th><th>Цена</th><th>Статус</th><th>Действия</th>" +
+          "</tr></thead><tbody>" +
+          rows +
+          "</tbody></table>"
+        : '<p class="stub-text">Пока нет товаров. Нажмите «+ Добавить товар».</p>') +
+      "</div>" +
+      "</article>"
     );
   }
-
 
   function renderSettingsSection() {
     var s = state.settings;
@@ -1162,11 +1291,51 @@
   }
 
   function bindProductsEvents() {
-    var addBtn = document.getElementById("addProductBtn");
+    var section = document.getElementById("sectionContent");
+    if (!section) return;
+
+    if (!section.dataset.productsListBound) {
+      section.dataset.productsListBound = "1";
+      section.addEventListener("click", function (event) {
+        var editBtn = event.target.closest("[data-edit-product-id]");
+        if (editBtn) {
+          state.editingProductId = editBtn.dataset.editProductId;
+          state.productFormOpen = true;
+          state.lastEditingProductId = undefined;
+          renderAdmin();
+          return;
+        }
+        var del = event.target.closest("[data-delete-product-id]");
+        if (!del) return;
+        var id = del.dataset.deleteProductId;
+        if (state.editingProductId === id) closeProductForm();
+        state.products = state.products.filter(function (p) {
+          return p.id !== id;
+        });
+        persistProducts();
+        renderAdmin();
+      });
+    }
+
+    var toggleFormBtn = document.getElementById("toggleProductFormBtn");
+    if (toggleFormBtn && !toggleFormBtn.dataset.bound) {
+      toggleFormBtn.dataset.bound = "1";
+      toggleFormBtn.addEventListener("click", function () {
+        if (isProductFormVisible()) {
+          closeProductForm();
+        } else {
+          openProductFormForNew();
+        }
+        renderAdmin();
+      });
+    }
+
+    if (!isProductFormVisible()) return;
+
+    var saveBtn = document.getElementById("saveProductBtn");
     var cancelBtn = document.getElementById("cancelProductEdit");
     var catSelect = document.getElementById("productCat");
-    var section = document.getElementById("sectionContent");
-    if (!addBtn || !section) return;
+    if (!saveBtn || !catSelect) return;
 
     function refreshSubcategorySelect(keepValue) {
       var cat = catSelect.value;
@@ -1190,8 +1359,7 @@
 
     if (cancelBtn) {
       cancelBtn.addEventListener("click", function () {
-        state.editingProductId = null;
-        state.lastEditingProductId = undefined;
+        closeProductForm();
         renderAdmin();
       });
     }
@@ -1210,17 +1378,49 @@
       });
     }
 
-    function wirePickerToggle(containerId) {
+    function mergeStockFromDom() {
+      var stock = {};
+      document.querySelectorAll("#productStockFields .product-stock-input").forEach(function (inp) {
+        var size = inp.dataset.stockSize;
+        if (!size) return;
+        var raw = inp.value.trim();
+        if (raw === "") return;
+        var n = Number(raw);
+        if (Number.isFinite(n) && n >= 0) stock[size] = Math.floor(n);
+      });
+      state.productFormDraftStock = stock;
+    }
+
+    function refreshProductStockFields() {
+      var wrap = document.getElementById("productStockFields");
+      if (!wrap) return;
+      var sizes = collectSelectedSizes();
+      wrap.innerHTML = buildStockFieldsHtml(sizes, state.productFormDraftStock || {});
+    }
+
+    function collectStockFromForm(activeSizes) {
+      mergeStockFromDom();
+      var stock = {};
+      activeSizes.forEach(function (size) {
+        if (state.productFormDraftStock[size] !== undefined) {
+          stock[size] = state.productFormDraftStock[size];
+        }
+      });
+      return stock;
+    }
+
+    function wirePickerToggle(containerId, onToggle) {
       var container = document.getElementById(containerId);
       if (!container) return;
       container.addEventListener("click", function (event) {
         var btn = event.target.closest(".picker-btn");
         if (!btn) return;
         btn.classList.toggle("is-active");
+        if (onToggle) onToggle();
       });
     }
 
-    wirePickerToggle("productSizesPicker");
+    wirePickerToggle("productSizesPicker", refreshProductStockFields);
     wirePickerToggle("productColorsPicker");
 
     var imageFileInput = document.getElementById("productImageFile");
@@ -1317,7 +1517,7 @@
       });
     }
 
-    addBtn.addEventListener("click", function () {
+    saveBtn.addEventListener("click", function () {
       var name = document.getElementById("productName").value.trim();
       var cat = document.getElementById("productCat").value.trim();
       var subcat = document.getElementById("productSubcat").value.trim();
@@ -1328,6 +1528,7 @@
       var video = resolveProductVideo(editing);
       var colors = collectSelectedColors();
       var sizes = collectSelectedSizes();
+      var stock = collectStockFromForm(sizes);
 
       if (!name) {
         showSectionMessage("productsMessage", "msg-error", "Введите название товара");
@@ -1354,6 +1555,7 @@
         video: video,
         colors: colors,
         sizes: sizes,
+        stock: stock,
       };
 
       if (state.editingProductId) {
@@ -1375,8 +1577,7 @@
         var copy = state.products.slice();
         copy[idx] = normalizedEdit;
         state.products = copy;
-        state.editingProductId = null;
-        state.lastEditingProductId = undefined;
+        closeProductForm();
         persistProducts();
         showSectionMessage(
           "productsMessage",
@@ -1402,7 +1603,7 @@
         return;
       }
       state.products = state.products.concat([normalized]);
-      state.lastEditingProductId = undefined;
+      closeProductForm();
       persistProducts();
       showSectionMessage(
         "productsMessage",
@@ -1411,23 +1612,6 @@
           ? "Товар добавлен"
           : "Товар сохранён. На витрине не показывается — добавьте фото."
       );
-      renderAdmin();
-    });
-
-    section.addEventListener("click", function (event) {
-      var editBtn = event.target.closest("[data-edit-product-id]");
-      if (editBtn) {
-        state.editingProductId = editBtn.dataset.editProductId;
-        state.lastEditingProductId = undefined;
-        renderAdmin();
-        return;
-      }
-      var del = event.target.closest("[data-delete-product-id]");
-      if (!del) return;
-      var id = del.dataset.deleteProductId;
-      if (state.editingProductId === id) state.editingProductId = null;
-      state.products = state.products.filter(function (p) { return p.id !== id; });
-      persistProducts();
       renderAdmin();
     });
   }

@@ -7,6 +7,8 @@ import {
   loadCategoriesForStorefront,
   loadSettings,
   colorToCss,
+  getSelectableSizes,
+  isStorefrontProduct,
 } from "./store.js";
 
 let selectedCat = "Все";
@@ -110,6 +112,7 @@ function renderProducts() {
   container.innerHTML = "";
 
   catalogProducts
+    .filter((p) => isStorefrontProduct(p))
     .filter((p) => isProductVisibleOnStorefront(p))
     .filter((p) => selectedCat === "Все" || p.cat === selectedCat)
     .forEach((p) => {
@@ -266,7 +269,7 @@ function openProductModal(p) {
   let color = null;
   const gallery = Array.isArray(p.images) && p.images.length ? p.images : [p.image];
   let activeImage = gallery[0];
-  const sizes = Array.isArray(p.sizes) ? p.sizes : [];
+  const sizes = getSelectableSizes(p);
   const colors = Array.isArray(p.colors) ? p.colors : [];
 
   function renderModal() {
